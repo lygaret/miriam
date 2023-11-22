@@ -20,7 +20,7 @@
      (minimeta (or forms ...)))))
     
 (define-syntax gen-parse
-  (syntax-rules (and call lambda or and begin quote ?* ?)
+  (syntax-rules (and call lambda or and begin quote ?* ? !)
 
     ((_ forms (tt) (and (lambda (t1) bdy ...)))
      (and (null? forms)
@@ -85,8 +85,8 @@
 	   (else (gen-parse forms matches (and rst ...)))))
 
     ((_ forms matches (and (or c1 ...) . rst))
-       (or (gen-parse forms matches (and c1 . rst))
-	   ...))
+     (or (gen-parse forms matches (and c1 . rst))
+	 ...))
 
     ((_ forms matches (and (and y ...)))
      (gen-parse forms matches (and y ...)))
@@ -95,6 +95,13 @@
      (let ((t (car forms)))
        (let ((next (cdr forms)))
 	 (gen-parse next (t x ...) (and rst ...)))))
+
+    ((_ forms matches (and (! c) rst ...))
+     (and c (gen-parse forms matches (and rst ...))))
+
+    ((_ forms (x ...) (and (? c1 default) rst ...))
+     (let ((g (and (not (null? forms)) (c1 (car forms)))))
+       (gen-parse (if g (cdr forms) forms) ((or g default) x ...) (and rst ...))))
 
     ((_ forms (x ...) (and pred rst ...))
      (let ((t (and (not (null? forms))
