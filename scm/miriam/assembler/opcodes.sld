@@ -20,5 +20,5 @@
          (let ((asmform 'form))
            (and (pair? asmform)
                 (let* ((opcode  (car asmform))
-                       (emitter (opcode-emitter opcode)))
+                       (emitter (opcode-emitter? opcode)))
                   (and opcode (emitter '() asmform))))))))))
