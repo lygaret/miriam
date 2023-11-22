@@ -11,15 +11,18 @@
 
 ;; does the given number fit in an signed/unsigned of a given size?
 
-(define s-byte-x?  (signed-x? (- (expt 2 7))))
-(define s-hword-x? (signed-x? (- (expt 2 15))))
-(define s-word-x?  (signed-x? (- (expt 2 31))))
-(define s-dword-x? (signed-x? (- (expt 2 63))))
+(define s-hbyte-x?   (signed-x? (- (expt 2 3))))
+(define s-byte-x?    (signed-x? (- (expt 2 7))))
+(define s-hword-x?   (signed-x? (- (expt 2 15))))
+(define s-relword-x? (signed-x? (- (expt 2 23)))) ;; 24bits, pcrel offset
+(define s-word-x?    (signed-x? (- (expt 2 31))))
+(define s-dword-x?   (signed-x? (- (expt 2 63))))
 
-(define u-byte-x?  (unsigned-x? (- (expt 2 8) 1)))
-(define u-hword-x? (unsigned-x? (- (expt 2 16) 1)))
-(define u-word-x?  (unsigned-x? (- (expt 2 32) 1)))
-(define u-dword-x? (unsigned-x? (- (expt 2 64) 1)))
+(define u-hbyte-x?   (unsigned-x? (- (expt 2 4) 1)))
+(define u-byte-x?    (unsigned-x? (- (expt 2 8) 1)))
+(define u-hword-x?   (unsigned-x? (- (expt 2 16) 1)))
+(define u-word-x?    (unsigned-x? (- (expt 2 32) 1)))
+(define u-dword-x?   (unsigned-x? (- (expt 2 64) 1)))
 
 ;; sized num constructors
 
@@ -28,16 +31,20 @@
     (or (and (pred x) x)
         (and (simple-pair? x key) (pred (cadr x)) (cadr x)))))
 
-(define s-byte  (num-x s-byte-x?  'byte))
-(define s-hword (num-x s-hword-x? 'hword))
-(define s-word  (num-x s-word-x?  'word))
-(define s-dword (num-x s-dword-x? 'dword))
+(define s-hbyte   (num-x s-hbyte-x?  'hbyte))
+(define s-byte    (num-x s-byte-x?  'byte))
+(define s-hword   (num-x s-hword-x? 'hword))
+(define s-relword (num-x s-relword-x? 'relword))
+(define s-word    (num-x s-word-x?  'word))
+(define s-dword   (num-x s-dword-x? 'dword))
 
+(define u-hbyte (num-x u-hbyte-x?  'hbyte))
 (define u-byte  (num-x u-byte-x?  'byte))
 (define u-hword (num-x u-hword-x? 'hword))
 (define u-word  (num-x u-word-x?  'word))
 (define u-dword (num-x u-dword-x? 'dword))
 
+(define (u/s-hbyte x) (or (u-hbyte x) (s-hbyte x)))
 (define (u/s-byte x)  (or (u-byte x)  (s-byte x)))
 (define (u/s-hword x) (or (u-hword x) (s-hword x)))
 (define (u/s-word x)  (or (u-word x)  (s-word x)))
