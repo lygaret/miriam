@@ -4,7 +4,8 @@
           simple-pair?
           singleton-pair?
           full?
-          positive-integer?)
+          positive-integer?
+          integer-within?)
 
   (import (scheme base))
   (import (scheme write))
@@ -27,6 +28,9 @@
 
     (define (positive-integer? x)
       (and (integer? x) (positive? x) x))
+
+    (define (integer-within? min x max)
+      (and (integer? x) (<= min x max) x))
 
     (define-syntax ->>
       (syntax-rules ()
