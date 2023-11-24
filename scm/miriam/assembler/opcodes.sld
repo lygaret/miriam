@@ -6,12 +6,14 @@
 
   (import (miriam prelude))
   (import (miriam langs minimeta))
+
   (import (miriam assembler numbers))
+  (import (miriam assembler syntax))
 
   (import (srfi 69)) ; hash-tables
   (import (srfi 60)) ; integers-as-bits
 
-  (include "opcodes-armv7.scm")
+  (include "isa-armv7.scm")
 
   (begin
     (define-syntax debug-emit
@@ -20,5 +22,5 @@
          (let ((asmform 'form))
            (and (pair? asmform)
                 (let* ((opcode  (car asmform))
-                       (emitter (opcode-emitter? opcode)))
+                       (emitter (opcode-fn opcode)))
                   (and opcode (emitter '() asmform))))))))))

@@ -5,7 +5,9 @@
           singleton-pair?
           full?
           positive-integer?
-          integer-within?)
+          negative-integer?
+          integer-within?
+          let/cc)
 
   (import (scheme base))
   (import (scheme write))
@@ -29,8 +31,16 @@
     (define (positive-integer? x)
       (and (integer? x) (positive? x) x))
 
+    (define (negative-integer? x)
+      (and (integer? x) (negative? x) x))
+
     (define (integer-within? min x max)
       (and (integer? x) (<= min x max) x))
+
+    (define-syntax let/cc
+      (syntax-rules ()
+        ((_ (k) rest ...)
+         (call/cc (lambda (k) rest ...)))))
 
     (define-syntax ->>
       (syntax-rules ()

@@ -36,3 +36,11 @@ It will consist of:
 - a pong game
 - a tetris game
 - a web browser? gopher maybe?
+
+* latest how to:
+
+#+begin_src
+$ guile --r7rs -L ./scm --fresh-auto-compile
+> ,m (miriam assembler opcodes)
+> (debug-emit (ldr r0 (++ r1) #x58))
+#+end_src
