@@ -67,6 +67,50 @@
 (define (register? sym)
   (hash-table-ref registers-table sym (lambda () #f)))
 
+(define (sregister? form)
+  (cond
+   ((register? form) =>
+    (lambda (r) (cons r '+)))
+   ((and (simple-pair? form)
+         (memv (car form) '(+ -))
+         (cons (register? (cadr form)) (car form))))
+   (else #f)))
+
+(define (sregister-r sr)    (car sr))
+(define (sregister-pos? sr) (eqv? '+ (cdr sr)))
+
+(define (reglist? form)
+  (and (list? form)
+       (call/cc
+        (lambda (return)
+          (let iter ((accum 0) (next form))
+            (cond ((null? next)
+                   (return accum))
+                  ((register? (car next)) =>
+                   (lambda (reg)
+                     (let ((regbit (arithmetic-shift 1 reg)))
+                       (iter (bitwise-ior accum regbit) (cdr next)))))
+                  (else
+                   (return #f))))))))
+
+(define (pre-index-reg? form)
+  (and (simple-pair? form)
+       (eqv? '++ (car form))
+       (register? (cadr form))))
+
+(define (post-index-reg? form)
+  (and (simple-pair? form)
+       (eqv? '++ (cadr form))
+       (register? (car form))))
+
+(define (wback-reg? form)
+  (if (simple-pair? form)
+      (and (eqv? '! (car form))
+           (let ((reg (register? (cadr form))))
+             (and reg (cons reg #t))))
+      (let ((reg (register? form)))
+        (and reg (cons reg #f)))))
+
 (define (opcode? sym)
   (let ((entry (hash-table-ref opcodes-table sym (lambda () #f))))
     (and entry (car entry))))
@@ -386,6 +430,130 @@
             (set! out (bitwise-ior out opt))
             (emit-instruction t (integer->bytelist out 4)))))))
 
+;; load multiple + action
+;; 1 30 9 8   7 6 5 4 3 2   1   20  9 8 7 6   5 4 3 2 1 10 9 8 7 6 5 4 3 2 1 0
+;; cond     | op1         | w | 1 | rn      | register-list
+
+(define ldm-emit
+  (minimeta
+   (and opcode? (? condition? #b1110) wback-reg? reglist?
+        (lambda (t o c w rl)
+          (let ((out 0)
+                (rn (car w))
+                (w  (cdr w)))
+            (set! out (arithmetic-shift (bitwise-ior out c)          6))
+            (set! out (arithmetic-shift (bitwise-ior out o)          1))
+            (set! out (arithmetic-shift (bitwise-ior out (if w 1 0)) 1))
+            (set! out (arithmetic-shift (bitwise-ior out 1)          4))
+            (set! out (arithmetic-shift (bitwise-ior out rn)        16))
+            (set! out (bitwise-ior out rl))
+            (emit-instruction t (integer->bytelist out 4)))))))
+
+;; ldr immediate emit
+;;                      add
+;; 1 30 9 8   7 6 5   4 3 2   1   20  9 8 7 6   5 4 3 2   1 10 9 8 7 6 5 4 3 2 1 0
+;; cond     | op1   | P U S | W | 1 | rn      | rt      | imm12
+;;                    index   writeback
+
+(define (flag? n) (if n 1 0))
+
+(define (ldr-imm-emit t c o p? u? s? w? rn rt imm12)
+  (let ((out   0))
+    (set! out (arithmetic-shift (bitwise-ior out c)          3))
+    (set! out (arithmetic-shift (bitwise-ior out o)          1))
+    (set! out (arithmetic-shift (bitwise-ior out (flag? p?)) 1))
+    (set! out (arithmetic-shift (bitwise-ior out (flag? u?)) 1))
+    (set! out (arithmetic-shift (bitwise-ior out (flag? s?)) 1))
+    (set! out (arithmetic-shift (bitwise-ior out (flag? w?)) 1))
+    (set! out (arithmetic-shift (bitwise-ior out 1)          4))
+    (set! out (arithmetic-shift (bitwise-ior out rn)         4))
+    (set! out (arithmetic-shift (bitwise-ior out rt)        12))
+    (set! out (bitwise-ior out imm12))
+    (emit-instruction t (integer->bytelist out 4))))
+
+;; ldr regsr emit
+;;                     add
+;; 1 30 9 8   7 6 5  4 3 2   1   20  9 8 7 6   5 4 3 2   1 10 9 8 7   6 5   4   3 2 1 0
+;; cond     | op1  | P U S | W | 1 | rn      | rt      | imm12      |     | 0 | rm
+;;                   index   writeback
+
+(define (ldr-regsr-emit t c o p? u? s? w? rn rt rm typ sh)
+  (let ((out 0))
+    (set! out (arithmetic-shift (bitwise-ior out c)          3))
+    (set! out (arithmetic-shift (bitwise-ior out (+ o 1))    1))
+    (set! out (arithmetic-shift (bitwise-ior out (flag? p?)) 1))
+    (set! out (arithmetic-shift (bitwise-ior out (flag? u?)) 1))
+    (set! out (arithmetic-shift (bitwise-ior out (flag? s?)) 1))
+    (set! out (arithmetic-shift (bitwise-ior out (flag? w?)) 1))
+    (set! out (arithmetic-shift (bitwise-ior out 1)          4))
+    (set! out (arithmetic-shift (bitwise-ior out rn)         4))
+    (set! out (arithmetic-shift (bitwise-ior out rt)         5))
+    (set! out (arithmetic-shift (bitwise-ior out sh)         2))
+    (set! out (arithmetic-shift (bitwise-ior out typ)        1))
+    (set! out (arithmetic-shift (bitwise-ior out 0)          4))
+    (set! out (bitwise-ior out rm))
+    (emit-instruction t (integer->bytelist out 4))))
+
+(define (ldr-emit flags)
+  (let ((s? (memv 'sizemod flags)))
+    (minimeta
+     (and opcode? (? condition? #b1110) register?
+          (or (and register?
+                   ;; no pre/post index: p? = #t, w? = #f
+                   (or (and (lambda (t o c rt rn)
+                              (ldr-imm-emit t c o #t #t s? #f rn rt 0)))
+                       (and imm12?
+                            (lambda (t o c rt rn imm)
+                              (let ((u?  (positive? imm))
+                                    (off (abs imm)))
+                                (ldr-imm-emit t c o #t u? s? #f rn rt off))))
+                       (and sregister? (? shift-w-imm? '(0 . 0))
+                            (lambda (t o c rt rn srm sh)
+                              (let ((rm  (sregister-r srm))
+                                    (u?  (sregister-pos? srm))
+                                    (sht (car sh))
+                                    (sho (cdr sh)))
+                                (ldr-regsr-emit t c o #t u? s? #f rn rt rm sht sho))))))
+
+              ;; pre-index: p? = #t, w? = #t
+              (and pre-index-reg?
+                   (or (and imm12?
+                            (lambda (t o c rt rn imm)
+                              (let ((u?  (positive? imm))
+                                    (off (abs imm)))
+                                (ldr-imm-emit t c o #t u? s? #t rn rt off))))
+                       (and sregister? (? shift-w-imm? '(0 . 0))
+                            (lambda (t o c rt rn srm sh)
+                              (let ((rm  (sregister-r srm))
+                                    (u?  (sregister-pos? srm))
+                                    (sht (car sh))
+                                    (sho (cdr sh)))
+                                (ldr-regsr-emit t c o #t u? s? #t rn rt rm sht sho))))))
+
+              ;; post-index: p? = #f, w? = #t
+              (and post-index-reg?
+                   (or (and imm12?
+                            (lambda (t o c rt rn imm)
+                              (let ((u?  (positive? imm))
+                                    (off (abs imm)))
+                                (ldr-imm-emit t c o #f u? s? #t rn rt off))))
+                       (and sregister? (? shift-w-imm? '(0 . 0))
+                            (lambda (t o c rt rn srm sh)
+                              (let ((rm  (sregister-r srm))
+                                    (u?  (sregister-pos? srm))
+                                    (sht (car sh))
+                                    (sho (cdr sh)))
+                                (ldr-regsr-emit t c o #f u? s? #t rn rt rm sht sho))))))
+
+              ;; relocated label
+              (and symbol? (? imm12? 0)
+                   (lambda (t o c rt label imm)
+                     (record-relocation t 'pcrel label)
+                     (let ((u?  (positive? imm))
+                           (off (abs imm))
+                           (pc  (register? 'pc)))
+                       (ldr-imm-emit t c o #t u? #f #f pc rt off)))))))))
+
 ;;        mnemonic     opcode  templates ...
 
 (define-opcode adc     #b01010    (data-emit '(rr rsr imm)))
@@ -431,45 +599,53 @@
 
 (define-opcode dmb     #b1111010101111111111100000101     barrier-emit)
 (define-opcode dsb     #b1111010101111111111100000100     barrier-emit)
+(define-opcode isb     #b1111010101111111111100000110     barrier-emit)
 
-(define-opcode enterx  'not-implemented)
-(define-opcode eor     #b00010 (data-emit '(rr imm)))
-(define-opcode eors    #b00011 (data-emit '(rr imm)))
-(define-opcode eret    'not-implemented)
-(define-opcode hb      'not-implemented)
+(define-opcode enterx  'not-implemented) ;; no support for thumb
+
+(define-opcode eor     #b00010    (data-emit '(rr rsr imm)))
+(define-opcode eors    #b00011    (data-emit '(rr rsr imm)))
+
+(define-opcode eret    'not-implemented) ;; todo: exception return (system)
+(define-opcode hb      'not-implemented) ;; no support for thumbee
 (define-opcode hbl     'not-implemented)
 (define-opcode hblp    'not-implemented)
 (define-opcode hbp     'not-implemented)
-(define-opcode hvc     'not-implemented)
-(define-opcode isb     'not-implemented)
-(define-opcode it      'not-implemented)
-(define-opcode ldc     'not-implemented)
+(define-opcode hvc     'not-implemented) ;; todo: hypervisor call (system)
+(define-opcode it      'not-implemented) ;; no support for thumb
+
+(define-opcode ldc     'not-implemented) ;; todo: coprocessors
 (define-opcode ldc2    'not-implemented)
-(define-opcode ldm     'not-implemented)
-(define-opcode ldmia   'not-implemented)
-(define-opcode ldmfd   'not-implemented)
-(define-opcode ldmda   'not-implemented)
-(define-opcode ldmfa   'not-implemented)
-(define-opcode ldmdb   'not-implemented)
-(define-opcode ldmea   'not-implemented)
-(define-opcode ldmib   'not-implemented)
-(define-opcode ldmeb   'not-implemented)
-(define-opcode ldmeb   'not-implemented)
-(define-opcode ldr     'not-implemented)
-(define-opcode ldrb    'not-implemented)
-(define-opcode ldrbt   'not-implemented)
-(define-opcode ldrd    'not-implemented)
+
+(define-opcode ldm     #b100010    ldm-emit)
+(define-opcode ldmia   #b100010    ldm-emit)
+(define-opcode ldmfd   #b100010    ldm-emit)
+(define-opcode ldmda   #b100000    ldm-emit)
+(define-opcode ldmfa   #b100000    ldm-emit)
+(define-opcode ldmdb   #b100100    ldm-emit)
+(define-opcode ldmea   #b100100    ldm-emit)
+(define-opcode ldmib   #b100110    ldm-emit)
+(define-opcode ldmeb   #b100110    ldm-emit)
+
+(define-opcode ldr     #b010       (ldr-emit '()))
+(define-opcode ldrt    #b010       (ldr-emit '()))
+(define-opcode ldrb    #b010       (ldr-emit '(sizemod)))
+(define-opcode ldrbt   #b010       (ldr-emit '(sizemod)))
+
+;; (define-opcode ldrd    #b000       ldr-emit #b1101)
+;; (define-opcode ldrh    #b000       ldr-emit #b1011)
+;; (define-opcode ldrsb   #b000       ldr-emit #b1101)
+;; (define-opcode ldrsh   #b000       ldr-emit)
+
+;; (define-opcode ldrht   #b000       ldr-emit #b1011)
+;; (define-opcode ldrsht  #b000       ldr-emit)
+;; (define-opcode ldrsbt  #b000       ldr-emit)
+
 (define-opcode ldrex   'not-implemented)
 (define-opcode ldrexb  'not-implemented)
 (define-opcode ldrexh  'not-implemented)
 (define-opcode ldrexd  'not-implemented)
-(define-opcode ldrh    'not-implemented)
-(define-opcode ldrht   'not-implemented)
-(define-opcode ldrsb   'not-implemented)
-(define-opcode ldrsbt  'not-implemented)
-(define-opcode ldrsh   'not-implemented)
-(define-opcode ldrsht  'not-implemented)
-(define-opcode ldrt    'not-implemented)
+
 (define-opcode mrc     'not-implemented)
 (define-opcode mrc2    'not-implemented)
 (define-opcode mrrc    'not-implemented)
