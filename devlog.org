@@ -1,0 +1,38 @@
+#+TITLE:   Devlog/Ideas
+#+AUTHOR:  Jon Raphaelson
+#+EMAIL:   jon@accidental.cc
+
+* intro
+
+I'm working on a from-scratch scheme operating system.
+
+It will consist of:
+
+- an ARMv7 assembler (r7rs, run on host)
+
+- a pre-scheme compiler (r7rs, runs on host)
+  - compiled to native ARMv7 code (through assembler)
+  - dialect of scheme, no gc (manual memory)
+    - probably still has call/cc, since we're compiling to cps anyway
+
+- a bytecode vm and garbage collector, written in our pre-scheme
+  - which can be booted on an rpi (rg55xx?)
+  - multiprocessor?
+    - the vm should be able to run independently on all cores
+    - study BEAM
+
+- a compiler for scheme to our bytecode vm
+
+- a rewrite of the assembler and pre-scheme compiler to run on the bytecode compiler
+
+- an os written in the dialect
+  - continuations as callbacks
+  - system level gc? system-wide s-expr based data types?
+
+- a graphical shell for the os
+  - simple tiled, but processes should get regions to draw
+
+- a text adventure game (zork)
+- a pong game
+- a tetris game
+- a web browser? gopher maybe?
