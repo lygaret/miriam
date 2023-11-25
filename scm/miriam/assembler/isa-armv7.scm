@@ -17,7 +17,9 @@
 
 ;; ---
 
-(define (flag? n) (if n 1 0))
+(define (emit-error out err)
+  (display (list "error: " err))
+  (newline))
 
 (define (emit-instruction out bytelist)
   (display (list "emit: " (map (lambda (n) (number->string n 16)) bytelist)))
@@ -26,11 +28,6 @@
 (define (record-relocation out type label)
   (display (list "recording relocation:" type label))
   (newline))
-
-(define b&  bitwise-and)
-(define b+  bitwise-ior)
-(define b<< arithmetic-shift)
-(define b>> (lambda (n amount) (arithmetic-shift n (- amount))))
 
 ;; direct emit of full opcodes
 
@@ -47,7 +44,7 @@
    (and opcode? (? condition? #b1110)
         (lambda (t o c)
           (let ((out 0))
-            (set! out (b>> (b+ out c) 28))
+            (set! out (b<< (b+ out c) 28))
             (set! out (b+ out o))
             (emit-instruction t (integer->bytelist out 4)))))))
 
@@ -116,7 +113,7 @@
 (define (data-emit flags)
   (minimeta
    (and opcode? (? condition? #b1110) register? register?
-        (or (and (! (memv 'imm12 flags)) imm12?
+        (or (and (! (memv 'imm flags)) imm12?
                  (lambda (t o c rd rn imm)
                    (data-regimm12-emit t c o rd rn imm)))
             (and (! (memv 'imms16 flags)) s-hword
@@ -311,7 +308,7 @@
 ;; ldr regsr emit
 ;;                     add
 ;; 1 30 9 8   7 6 5  4 3 2   1   20  9 8 7 6   5 4 3 2   1 10 9 8 7   6 5   4   3 2 1 0
-;; cond     | op1  | P U S | W | 1 | rn      | rt      | imm12      |     | 0 | rm
+;; cond     | op1  | P U S | W | 1 | rn      | rt      | imm5       | typ | 0 | rm
 ;;                   index   writeback
 
 (define (ldr-regsr-emit t c o p? u? s? w? rn rt rm typ sh)
@@ -328,6 +325,52 @@
     (set! out (b<< (b+ out sh)         2))
     (set! out (b<< (b+ out typ)        1))
     (set! out (b<< (b+ out 0)          4))
+    (set! out (b+ out rm))
+    (emit-instruction t (integer->bytelist out 4))))
+
+;; ldr extended immediate emit
+;;                      add
+;; 1 30 9 8   7 6 5   4 3 2   1   20  9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
+;; cond     | 0 0 0 | P U S | W | 0 | rn      | rt      | imm4h    | op1     | imm4l
+;;                    index   writeback
+
+(define (ldrx-imm-emit t c o p? u? s? w? rn rt imm8)
+  (let ((out   0)
+        (imm4h (b>> imm8 4))
+        (imm4l (b&  imm8 #b1111)))
+    (set! out (b<< (b+ out c)          3))
+    (set! out (b<< (b+ out 0)          1))
+    (set! out (b<< (b+ out (flag? p?)) 1))
+    (set! out (b<< (b+ out (flag? u?)) 1))
+    (set! out (b<< (b+ out (flag? s?)) 1))
+    (set! out (b<< (b+ out (flag? w?)) 1))
+    (set! out (b<< (b+ out 0)          4))
+    (set! out (b<< (b+ out rn)         4))
+    (set! out (b<< (b+ out rt)         4))
+    (set! out (b<< (b+ out imm4h)      4))
+    (set! out (b<< (b+ out o)          4))
+    (set! out (b+ out imm4l))
+    (emit-instruction t (integer->bytelist out 4))))
+
+;; ldr extended regsr emit
+;;                      add
+;; 1 30 9 8   7 6 5   4 3 2   1   20  9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
+;; cond     | 0 0 0 | P U S | W | 1 | rn      | rt      | 0 0  0 0 | 1 1 1 1 | rm
+;;                    index   writeback
+
+(define (ldrx-reg-emit t c o p? u? s? w? rn rt rm)
+  (let ((out   0))
+    (set! out (b<< (b+ out c)          3))
+    (set! out (b<< (b+ out 0)          1))
+    (set! out (b<< (b+ out (flag? p?)) 1))
+    (set! out (b<< (b+ out (flag? u?)) 1))
+    (set! out (b<< (b+ out (flag? s?)) 1))
+    (set! out (b<< (b+ out (flag? w?)) 1))
+    (set! out (b<< (b+ out 1)          4))
+    (set! out (b<< (b+ out rn)         4))
+    (set! out (b<< (b+ out rt)         4))
+    (set! out (b<< (b+ out 0)          4))
+    (set! out (b<< (b+ out 1)          4))
     (set! out (b+ out rm))
     (emit-instruction t (integer->bytelist out 4))))
 
@@ -367,20 +410,20 @@
                                     (sho (cdr sh)))
                                 (ldr-regsr-emit t c o #t u? s? #t rn rt rm sht sho))))))
 
-              ;; post-index: p? = #f, w? = #t
+              ;; post-index: p? = #f, w? = #f
               (and post-index-reg?
                    (or (and imm12?
                             (lambda (t o c rt rn imm)
                               (let ((u?  (positive? imm))
                                     (off (abs imm)))
-                                (ldr-imm-emit t c o #f u? s? #t rn rt off))))
+                                (ldr-imm-emit t c o #f u? s? #f rn rt off))))
                        (and sregister? (? shift-w-imm? '(0 . 0))
                             (lambda (t o c rt rn srm sh)
                               (let ((rm  (sregister-r srm))
                                     (u?  (sregister-pos? srm))
                                     (sht (car sh))
                                     (sho (cdr sh)))
-                                (ldr-regsr-emit t c o #f u? s? #t rn rt rm sht sho))))))
+                                (ldr-regsr-emit t c o #f u? s? #f rn rt rm sht sho))))))
 
               ;; relocated label
               (and symbol? (? imm12? 0)
@@ -390,6 +433,72 @@
                            (off (abs imm))
                            (pc  (register? 'pc)))
                        (ldr-imm-emit t c o #t u? #f #f pc rt off)))))))))
+
+(define (ldrx-emit flags)
+  (let ((s? (not (memv 'sizemod flags))))
+    (minimeta
+     (and opcode? (? condition? #b1110) register? register?
+          (or (and register?
+                   ;; no pre/post index: p? = #t, w? = #f
+                   (or (and (lambda (t o c rt rt2 rn)
+                              (and (even? rt) (< rt 14) (= rt2 (+ rt 1))
+                                   (ldrx-imm-emit t c o #t #t s? #f rn rt 0))))
+
+                       (and imm12?
+                            (lambda (t o c rt rt2 rn imm)
+                              (and (even? rt) (< rt 14) (= rt2 (+ rt 1))
+                                   (let ((u?  (positive? imm))
+                                         (off (abs imm)))
+                                     (ldrx-imm-emit t c o #t u? s? #f rn rt off)))))
+
+                       (and sregister?
+                            (lambda (t o c rt rt2 rn srm)
+                              (and (even? rt) (< rt 14) (= rt2 (+ rt 1))
+                                   (let ((rm  (sregister-r srm))
+                                         (u?  (sregister-pos? srm)))
+                                     (ldrx-reg-emit t c o #t u? s? #f rn rt rm)))))))
+
+              ;; pre-index: p? = #t, w? = #t
+              (and pre-index-reg?
+                   (or (and imm12?
+                            (lambda (t o c rt rt2 rn imm)
+                              (and (even? rt) (< rt 14) (= rt2 (+ rt 1))
+                                   (let ((u?  (positive? imm))
+                                         (off (abs imm)))
+                                     (ldrx-imm-emit t c o #t u? s? #t rn rt off)))))
+                       
+                       (and sregister?
+                            (lambda (t o c rt rt2 rn srm)
+                              (and (even? rt) (< rt 14) (= rt2 (+ rt 1))
+                                   (let ((rm  (sregister-r srm))
+                                         (u?  (sregister-pos? srm)))
+                                     (ldrx-reg-emit t c o #t u? s? #t rn rt rm)))))))
+
+              ;; post-index: p? = #f, w? = #t
+              (and post-index-reg?
+                   (or (and imm12?
+                            (lambda (t o c rt rt2 rn imm)
+                              (and (even? rt) (< rt 14) (= rt2 (+ rt 1))
+                                   (let ((u?  (positive? imm))
+                                         (off (abs imm)))
+                                     (ldrx-imm-emit t c o #f u? s? #t rn rt off)))))
+
+                       (and sregister?
+                            (lambda (t o c rt rt2 rn srm)
+                              (and (even? rt) (< rt 14) (= rt2 (+ rt 1))
+                                   (let ((rm  (sregister-r srm))
+                                         (u?  (sregister-pos? srm)))
+                                     (ldrx-reg-emit t c o #f u? s? #t rn rt rm)))))))
+
+              ;; relocated label
+              (and symbol? (? imm12? 0)
+                   (lambda (t o c rt rt2 label imm)
+                     (and (even? rt) (< rt 14) (= rt2 (+ rt 1))
+                          (let ((u?  (positive? imm))
+                                (off (abs imm))
+                                (pc  (register? 'pc)))
+                            (record-relocation t 'pcrel label)
+                            (ldrx-imm-emit t c o #f u? s? #t pc rt off))))))))))
 
 ;;        mnemonic     opcode  templates ...
 
@@ -464,19 +573,18 @@
 (define-opcode ldmib   #b100110    ldm-emit)
 (define-opcode ldmeb   #b100110    ldm-emit)
 
-(define-opcode ldr     #b010       (ldr-emit '()))
-(define-opcode ldrt    #b010       (ldr-emit '()))
-(define-opcode ldrb    #b010       (ldr-emit '(sizemod)))
-(define-opcode ldrbt   #b010       (ldr-emit '(sizemod)))
+(define-opcode ldr     #b010       (ldr-emit  '()))
+(define-opcode ldrb    #b010       (ldr-emit  '(sizemod)))
+(define-opcode ldrd    #b1101      (ldrx-emit '(sizemod)))
+(define-opcode ldrh    #b1011      (ldrx-emit '()))
+(define-opcode ldrsb   #b1101      (ldrx-emit '()))
+(define-opcode ldrsh   #b1111      (ldrx-emit '()))
 
-;; (define-opcode ldrd    #b000       ldr-emit #b1101)
-;; (define-opcode ldrh    #b000       ldr-emit #b1011)
-;; (define-opcode ldrsb   #b000       ldr-emit #b1101)
-;; (define-opcode ldrsh   #b000       ldr-emit)
-
-;; (define-opcode ldrht   #b000       ldr-emit #b1011)
-;; (define-opcode ldrsht  #b000       ldr-emit)
-;; (define-opcode ldrsbt  #b000       ldr-emit)
+(define-opcode ldrt    'not-implemented) ;; #b010       (ldr-emit '()))
+(define-opcode ldrbt   'not-implemented) ;; #b010       (ldr-emit '(sizemod)))
+(define-opcode ldrht   'not-implemented)
+(define-opcode ldrsht  'not-implemented)
+(define-opcode ldrsbt  'not-implemented)
 
 (define-opcode ldrex   'not-implemented)
 (define-opcode ldrexb  'not-implemented)
@@ -490,8 +598,9 @@
 (define-opcode mla     'not-implemented)
 (define-opcode mlas    'not-implemented)
 (define-opcode mls     'not-implemented)
-(define-opcode mov     #b11010 (data-emit '(rr rsr imms16)))
-(define-opcode movs    #b11011 (data-emit '(rr rsr)))
+(define-opcode mov     #b11010 (data-emit '(rr rsr imm)))
+(define-opcode movs    #b11011 (data-emit '(rr rsr imm)))
+(define-opcode movw    #b11010 (data-emit '(rr rsr imms16)))
 (define-opcode mul     'not-implemented)
 (define-opcode muls    'not-implemented)
 (define-opcode mvn     #b11110 (data-emit '(rr imm)))

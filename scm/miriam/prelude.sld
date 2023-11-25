@@ -7,7 +7,10 @@
           positive-integer?
           negative-integer?
           integer-within?
-          let/cc)
+
+          let/cc
+          if/let
+          when/let)
 
   (import (scheme base))
   (import (scheme write))
@@ -41,6 +44,19 @@
       (syntax-rules ()
         ((_ (k) rest ...)
          (call/cc (lambda (k) rest ...)))))
+
+    (define-syntax when/let
+      (syntax-rules ()
+        ((_ ((name test) ...) body ...)
+         (let ((name test) ...)
+           (and name ...
+                (begin body ...))))))
+
+    (define-syntax if/let
+      (syntax-rules ()
+        ((_ ((name test) ...) then else)
+         (let ((name test) ...)
+           (if (and name ...) then else)))))
 
     (define-syntax ->>
       (syntax-rules ()

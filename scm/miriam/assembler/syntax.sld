@@ -1,18 +1,28 @@
 (define-library (miriam assembler syntax)
-  (export register?
+  (export b& b+ b<< b>> flag?
+          register?
           sregister? sregister-r sregister-pos?
           wregister? wregister-r wregister-w?
           pre-index-reg?
           post-index-reg?
           reglist?
           condition?
-          shifts-type?
+          shift-type?
           shift-w-imm?
           shift-w-reg?
+          operand?
+          operand-mode   
+          operand-rn     
+          operand-shtyp  
+          operand-shoff  
+          operand-rs     
+          operand-imm    
           barrier-option?
+          imm4? imm5? imm16?
           imm12? -imm12?)
 
   (import (scheme base))
+  (import (scheme cxr))
   (import (scheme write))
 
   (import (miriam prelude))

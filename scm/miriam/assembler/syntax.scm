@@ -1,3 +1,10 @@
+(define-syntax b&  (syntax-rules () ((_ rest ...) (bitwise-and rest ...))))
+(define-syntax b+  (syntax-rules () ((_ rest ...) (bitwise-ior rest ...))))
+(define-syntax b<< (syntax-rules () ((_ rest ...) (arithmetic-shift rest ...))))
+(define-syntax b>> (syntax-rules () ((_ n amt)    (arithmetic-shift n (- amt)))))
+
+(define (flag? n) (if n 1 0))
+
 (define conditions-table
   (alist->hash-table
    '((?eq . #b0000)               ; Z = 1             (zero)
@@ -111,6 +118,44 @@
 (define (shift-type? sym)
   (hash-table-ref shifts-table sym (lambda () #f)))
 
+;; imm12          imm
+;; rn             reg + imm lsl 0
+;; (rn rrx)       reg + imm ror 0 
+;; (rn lsl imm )  reg + imm shift imm
+;; (rn lsl rs)    reg + reg shift rn
+
+(define (operand? form)
+  (let/cc (return)
+    (when/let ((imm (imm12? form)))    (return (list 'imm imm)))
+    (when/let ((rn  (register? form))) (return (list 'reg+imm rn (shift-type? 'lsl) 0)))
+
+    (unless (pair? form) (return #f))
+
+    (when/let ((rn (register? (car form))))
+      (when (null? (cdr form))
+        (return #f))
+
+      (when (and (eqv?  (cadr form) 'rrx)
+                 (null? (cddr form)))
+        (return (list 'reg+imm rn (shift-type? 'ror) 0)))
+
+      (when/let ((shtyp (shift-type? (cadr form))))
+        (when (null? (cddr form))
+          (return #f))
+
+        (when/let ((imm (imm12?    (caddr form)))) (return (list 'reg+imm rn shtyp imm)))
+        (when/let ((rs  (register? (caddr form)))) (return (list 'reg+reg rn shtyp rs)))))
+
+    ;; fall through
+    (return #f)))
+
+(define (operand-mode   op) (car op))
+(define (operand-rn     op) (and (pair? op) (memv (car op) '(reg+imm reg+reg)) (cadr op)))
+(define (operand-shtyp  op) (and (pair? op) (memv (car op) '(reg+imm reg+reg)) (caddr op)))
+(define (operand-shoff  op) (and (pair? op) (eqv? (car op) 'reg+imm) (cadddr op)))
+(define (operand-rs     op) (and (pair? op) (eqv? (car op) 'reg+reg) (cadddr op)))
+(define (operand-imm    op) (and (pair? op) (eqv? (car op) 'imm) (cadr op)))
+
 ;; rrx is special, it's an alias for ror with 0
 ;; other shifts are a pair of (name imm/reg)
 
@@ -149,29 +194,42 @@
 ;; -----
 ;; immediate helpers
 
+(define (imm4? x)
+  (integer-within? 0 x 15))
+
+(define (imm5? x)
+  (integer-within? 0 x 31))
+
+(define (imm16? x)
+  (u-hword x))
+
 ;; imm12 is an 8-bit immediate, rotated up to 15 positions
 ;; not all values can be expressed this way
 
 ;; this algorithem just brute force checks for a valid encoding
 
 (define (imm12? x)
-  (and (positive-integer? x)
-       (let/cc (return)
-         (do ((rot    0 (+ rot 2))
-              (encode x (rotate-bit-field encode 2 0 32)))
-             ((>= rot 32) #f)
-           (when (zero? (bitwise-and encode -256))
-             (let* ((output (arithmetic-shift (/ rot 2) 8))
-                    (output (bitwise-ior output encode)))
-               (return output)))))))
+  (cond
+   ((and (integer? x) (zero? x)) x)
+   ((positive-integer? x)
+    (let/cc (return)
+      (do ((rot    0 (+ rot 2))
+           (encode x (rotate-bit-field encode 2 0 32)))
+          ((>= rot 32) #f)
+        (when (zero? (b& encode -256))
+          (let* ((output (b<< (/ rot 2) 8))
+                 (output (b+  output encode)))
+            (return output))))))
+   (else #f)))
 
 (define (-imm12? x)
-  (and (negative-integer? x)
-       (let/cc (return)
-         (do ((rot    0       (+ rot 2))
-              (encode (abs x) (rotate-bit-field encode 2 0 32)))
-             ((>= rot 32) #f)
-           (when (zero? (bitwise-and encode -256))
-             (let* ((output (arithmetic-shift (/ rot 2) 8))
-                    (output (bitwise-ior output encode)))
-               (return output)))))))
+  (and
+   (negative-integer? x)
+   (let/cc (return)
+     (do ((rot    0       (+ rot 2))
+          (encode (abs x) (rotate-bit-field encode 2 0 32)))
+         ((>= rot 32) #f)
+       (when (zero? (b& encode -256))
+         (let* ((output (b<< (/ rot 2) 8))
+                (output (b+ output encode)))
+           (return output)))))))
