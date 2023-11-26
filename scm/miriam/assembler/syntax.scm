@@ -42,16 +42,41 @@
      (v1 . 4) (v2 . 5) (v3 . 6) (v4 . 7)
      (v5 . 8) (v6 . 9) (v7 . 10) (v8 . 11)
 
-     (sb . 9)  ; static base
-     (sl . 10) ; stack limit
-     (fp . 11) ; frame pointer
-     (ip . 12) ; intra-procedure-call scratch
-     (sp . 13) ; stack pointer
-     (lr . 14) ; link registers
-     (pc . 15) ; program counter
+     (sb . 9)   ; static base
+     (sl . 10)  ; stack limit
+     (fp . 11)  ; frame pointer
+     (ip . 12)  ; intra-procedure-call scratch
+     (sp . 13)  ; stack pointer
+     (lr . 14)  ; link registers
+     (pc . 15)) ; program counter
+   eqv?))
 
-     ;; aliases
-     (cpsr . cpsr)) eqv?))
+(define sysregisters-table
+  '((cpsr . 0) (apsr . 0) (spsr . 1)))
+
+(define (sysregister? sym)
+  (when/let ((ent (assv sym sysregisters-table)))
+    (cdr ent)))
+
+(define sysregisters-masks-table
+  '((cpsr_c      . #b0001)
+    (cpsr_x      . #b0010)
+    (cpsr_xc     . #b0011)
+    (cpsr_s      . #b0100)
+    (cpsr_sc     . #b0101)
+    (cpsr_sxc    . #b0111)
+    (cpsr_f      . #b1000)
+    (cpsr_fc     . #b1001)
+    (cpsr_fx     . #b1010)
+    (cpsr_fxc    . #b1011)
+    (cpsr_fs     . #b1100)
+    (cpsr_fsc    . #b1101)
+    (cpsr_fsx    . #b1110)
+    (cpsr_fsxc   . #b1111)))
+
+(define (sysregister-mask? sym)
+  (when/let ((ent (assv sym sysregisters-masks-table)))
+    (cdr ent)))
 
 ;; lookup the register number by symbol
 (define (register? sym)
@@ -120,7 +145,7 @@
 
 ;; imm12          imm
 ;; rn             reg + imm lsl 0
-;; (rn rrx)       reg + imm ror 0 
+;; (rn rrx)       reg + imm ror 0
 ;; (rn lsl imm )  reg + imm shift imm
 ;; (rn lsl rs)    reg + reg shift rn
 

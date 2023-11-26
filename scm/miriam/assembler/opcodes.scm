@@ -148,6 +148,37 @@
 (define-opcode smlal  #b000 (parse/multiply-long #t #t #f))
 (define-opcode smlals #b000 (parse/multiply-long #t #t #t))
 
+;; ---
+
+(define parse/clz
+  (minimeta
+   (and opcode? (? condition? #b1110) register? register?
+        (lambda (t o c rd rm)
+          (encode/clz t c rd rm)))))
+
+(define-opcode clz    #b000 parse/clz)
+
+;; ---
+
+(define parse/mrs-read-status
+  (minimeta
+   (and opcode? (? condition? #b1110) register? sysregister?
+        (lambda (t o c rd spec)
+          (encode/move-from-status-register t c spec rd)))))
+
+(define parse/msr-write-status
+  (minimeta
+   (and opcode? (? condition? #b1110) sysregister-mask?
+        (or (and register?
+                 (lambda (t o c mask rn)
+                   (encode/move-to-status-register t c 0 mask rn)))
+            (and imm12?
+                 (lambda (t o c mask imm)
+                   (encode/move-immediate-to-status-register t c 0 mask imm)))))))
+
+(define-opcode mrs #b000 parse/mrs-read-status)
+(define-opcode msr #b000 parse/msr-write-status)
+
 ;; (define-opcode adr     #b00000     adr-emit) ;; special mnemonics for add/sub + pc-rel
 ;; (define-opcode adrs    #b00001     adr-emit)
 ;; (define-opcode b       #b1010      b-emit)
@@ -161,7 +192,6 @@
 
 ;; (define-opcode clrex   #b11110101011111111111000000011111 direct-emit)
 
-;; (define-opcode clz     #b00010110  clz-emit)
 
 ;; (define-opcode cps     'not-implemented) ;; todo: change processor state (system)
 ;; (define-opcode cpy     'not-implemented) ;; no support for deprecated synonyms

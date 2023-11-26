@@ -6,6 +6,8 @@
           pre-index-reg?
           post-index-reg?
           reglist?
+          sysregister?
+          sysregister-mask?
           condition?
           shift-type?
           shift-w-imm?
