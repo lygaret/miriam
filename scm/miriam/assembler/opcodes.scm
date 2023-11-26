@@ -179,6 +179,21 @@
 (define-opcode mrs #b000 parse/mrs-read-status)
 (define-opcode msr #b000 parse/msr-write-status)
 
+;; ---
+;; todo: load/store instructions
+
+;; ---
+
+(define (parse/swap b?)
+  (let ((b (flag? b?)))
+    (minimeta
+     (and opcode? (? condition? #B1110) register? register? register?
+          (lambda (t _ c rd rm rn)
+            (encode/swap t c b rd rn rm))))))
+
+(define-opcode swp  #b000 (parse/swap #f))
+(define-opcode swpb #b000 (parse/swap #t))
+
 ;; (define-opcode adr     #b00000     adr-emit) ;; special mnemonics for add/sub + pc-rel
 ;; (define-opcode adrs    #b00001     adr-emit)
 ;; (define-opcode b       #b1010      b-emit)
