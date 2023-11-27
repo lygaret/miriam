@@ -132,19 +132,34 @@
     (set! out (b+ (b<< out 5)     crm))
     (emit-instruction t (integer->bytelist out 4))))
 
-(define (encode/copro-register-transfer t c op1 crn rt cnum op2 crm)
+(define (encode/copro-register-transfer t c op1 l? crn rt cnum op2 crm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
-  ;; cond     | 1 1 1 0 | op1    0 | crn     | rt      | cnum     | op2   1 | crm
-  (let ((out 0))
+  ;; cond     | 1 1 1 0 | op1    l | crn     | rt      | cnum     | op2   1 | crm
+  (let ((out 0)
+        (l (flag? l?)))
     (set! out (b+  out              c))
     (set! out (b+ (b<< out 4)  #b1110))
     (set! out (b+ (b<< out 3)     op1))
-    (set! out (b+ (b<< out 5)     crn))
+    (set! out (b+ (b<< out 1)       l))
+    (set! out (b+ (b<< out 4)     crn))
     (set! out (b+ (b<< out 4)      rt))
     (set! out (b+ (b<< out 4)    cnum))
     (set! out (b+ (b<< out 3)     op2))
     (set! out (b+ (b<< out 1)     #b1))
     (set! out (b+ (b<< out 4)     crm))
+    (emit-instruction t (integer->bytelist out 4))))
+
+(define (encode/software-breakpoint t c imm)
+  ;; 1 30 9 8   7 6 5 4 3 2 1 20   9 8 7 6 5 4 3 2 1 10 9 8   7 6 5 4   3 2 1 0
+  ;; cond     | 0 0 0 1 0 0 1 0  | imm12                    | 0 1 1 1 | imm4
+  (let ((out   0)
+        (immhi (b>> imm 4))
+        (immlo (b&  imm #x0F)))
+    (set! out (b+  out                 c))
+    (set! out (b+ (b<< out 8) #b00010010))
+    (set! out (b+ (b<< out 12)     immhi))
+    (set! out (b+ (b<< out 4)     #b0111))
+    (set! out (b+ (b<< out 4)      immlo))
     (emit-instruction t (integer->bytelist out 4))))
 
 (define (encode/software-interrupt t c intno)
@@ -348,7 +363,6 @@
     (set! out (b+ (b<< out 4)  #b1111))
     (set! out (b+ (b<< out 12)    imm))
     (emit-instruction t (integer->bytelist out 4))))
-
 
 (define (encode/clz t c rd rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0

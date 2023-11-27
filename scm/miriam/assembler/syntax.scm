@@ -216,8 +216,35 @@
 (define (barrier-option? sym)
   (hash-table-ref barrier-options-table sym (lambda () #f)))
 
+;; ----
+
+(define coprocessors-table
+  (alist->hash-table
+   '((p0  .  0) (p1  .  1) (p2  .  2) (p3  .  3)
+     (p4  .  4) (p5  .  5) (p6  .  6) (p7  .  7)
+     (p8  .  8) (p9  .  9) (p10 . 10) (p11 . 11)
+     (p12 . 12) (p13 . 13) (p14 . 14) (p15 . 15))
+   eqv?))
+
+(define coprocessors-registers-table
+  (alist->hash-table
+   '((cr0  .  0) (cr1  .  1) (cr2  .  2) (cr3  .  3)
+     (cr4  .  4) (cr5  .  5) (cr6  .  6) (cr7  .  7)
+     (cr8  .  8) (cr9  .  9) (cr10 . 10) (cr11 . 11)
+     (cr12 . 12) (cr13 . 13) (cr14 . 14) (cr15 . 15))
+   eqv?))
+
+(define (copro? sym)
+  (hash-table-ref coprocessors-table sym (lambda () #f)))
+
+(define (copro-register? sym)
+  (hash-table-ref coprocessors-registers-table sym (lambda () #f)))
+
 ;; -----
 ;; immediate helpers
+
+(define (imm3? x)
+  (integer-within? 0 x 7))
 
 (define (imm4? x)
   (integer-within? 0 x 15))
@@ -227,6 +254,9 @@
 
 (define (imm16? x)
   (u-hword x))
+
+(define (imm24? x)
+  (integer-within? 0 x #x00FFFFFF))
 
 ;; imm12 is an 8-bit immediate, rotated up to 15 positions
 ;; not all values can be expressed this way

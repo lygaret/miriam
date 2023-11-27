@@ -8,6 +8,8 @@
           reglist?
           sysregister?
           sysregister-mask?
+          copro?
+          copro-register?
           condition?
           shift-type?
           shift-w-imm?
@@ -20,7 +22,7 @@
           operand-rs     
           operand-imm    
           barrier-option?
-          imm4? imm5? imm16?
+          imm3? imm4? imm5? imm16? imm24?
           imm12? -imm12?)
 
   (import (scheme base))

@@ -194,6 +194,68 @@
 (define-opcode swp  #b000 (parse/swap #f))
 (define-opcode swpb #b000 (parse/swap #t))
 
+;; ---
+
+(define parse/bkpt
+  (minimeta
+   (and opcode? u-hword
+        (lambda (t _ imm) (encode/software-breakpoint t #b1110 imm)))))
+
+(define parse/swi
+  (minimeta
+   (and opcode? (? condition? #b1110) imm24?
+        (lambda (t _ c imm) (encode/software-interrupt t c imm)))))
+
+(define-opcode bkpt #b000 parse/bkpt)
+(define-opcode swi  #b000 parse/swi)
+(define-opcode svc  #b000 parse/swi)
+
+;; ---
+
+(define parse/cdp1
+  (minimeta
+   (and opcode? (? condition? #b1110) copro? imm4? copro-register? copro-register? copro-register? (? imm3? #b000)
+        (lambda (t o c cpnum op1 crd crn crm op2)
+          (encode/copro-data-processing t c op1 crn crd cpnum op2 crm)))))
+
+(define parse/cdp2
+  (minimeta
+   (and opcode? copro? imm4? copro-register? copro-register? copro-register? (? imm3? #b000)
+        (lambda (t o cpnum op1 crd crn crm op2)
+          (encode/copro-data-processing t #b1111 op1 crn crd cpnum op2 crm)))))
+
+(define-opcode cdp     #b000 parse/cdp1)
+(define-opcode cdp2    #b000 parse/cdp2)
+
+(define parse/mrc-read-copro
+  (minimeta
+   (and opcode? (? condition? #b1110) copro? imm4? register? copro-register? copro-register? (? imm3? #b000)
+        (lambda (t o c cpnum op1 rt crn crm op2)
+          (encode/copro-register-transfer t c op1 #t crn rt cpnum op2 crm)))))
+
+(define parse/mrc-read-copro2
+  (minimeta
+   (and opcode? copro? imm4? register? copro-register? copro-register? (? imm3? #b000)
+        (lambda (t o cpnum op1 rt crn crm op2)
+          (encode/copro-register-transfer t #b1111 op1 #t crn rt cpnum op2 crm)))))
+
+(define parse/mcr-write-copro
+  (minimeta
+   (and opcode? (? condition? #b1110) copro? imm4? register? copro-register? copro-register? (? imm3? #b000)
+        (lambda (t o c cpnum op1 rt crn crm op2)
+          (encode/copro-register-transfer t c op1 #f crn rt cpnum op2 crm)))))
+
+(define parse/mcr-write-copro2
+  (minimeta
+   (and opcode? copro? imm4? register? copro-register? copro-register? (? imm3? #b000)
+        (lambda (t o cpnum op1 rt crn crm op2)
+          (encode/copro-register-transfer t #b1111 op1 #f crn rt cpnum op2 crm)))))
+
+(define-opcode mcr     #b000 parse/mcr-write-copro)
+(define-opcode mcr2    #b000 parse/mcr-write-copro2)
+(define-opcode mrc     #b000 parse/mrc-read-copro)
+(define-opcode mrc2    #b000 parse/mrc-read-copro2)
+
 ;; (define-opcode adr     #b00000     adr-emit) ;; special mnemonics for add/sub + pc-rel
 ;; (define-opcode adrs    #b00001     adr-emit)
 ;; (define-opcode b       #b1010      b-emit)
