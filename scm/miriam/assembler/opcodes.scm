@@ -18,13 +18,15 @@
 ;; ---
 
 (define (parse/data-arity1 s?)
-  (minimeta
-   (and opcode? (? condition? #b1110) register? operand?
-        (lambda (t o c rd op)
-          (let ((s (flag? s?)))
+  (let ((s (flag? s?)))
+    (minimeta
+     (and opcode? (? condition? #b1110) register? operand?
+          (lambda (t o c rd op)
             (case (operand-mode op)
               ((imm)     (encode/data-processing-immediate       t c o s rd 0 (operand-imm op)))
+              ((-imm)    (encode/data-processing-immediate       t c o s rd 0 (operand-imm op)))
               ((reg+imm) (encode/data-processing-immediate-shift t c o s rd 0 (operand-rn op) (operand-shtyp op) (operand-shoff op)))
+              ((reg-imm) (encode/data-processing-immediate-shift t c o s rd 0 (operand-rn op) (operand-shtyp op) (operand-shoff op)))
               ((reg+reg) (encode/data-processing-register-shift  t c o s rd 0 (operand-rn op) (operand-shtyp op) (operand-rs op)))))))))
 
 (define (parse/data-arity2 s?)
@@ -34,7 +36,9 @@
           (let ((s (flag? s?)))
             (case (operand-mode op)
               ((imm)     (encode/data-processing-immediate       t c o s 0 rn (operand-imm op)))
+              ((-imm)    (encode/data-processing-immediate       t c o s 0 rn (operand-imm op)))
               ((reg+imm) (encode/data-processing-immediate-shift t c o s 0 rn (operand-rn op) (operand-shtyp op) (operand-shoff op)))
+              ((reg-imm) (encode/data-processing-immediate-shift t c o s 0 rn (operand-rn op) (operand-shtyp op) (operand-shoff op)))
               ((reg+reg) (encode/data-processing-register-shift  t c o s 0 rn (operand-rn op) (operand-shtyp op) (operand-rs op)))))))))
 
 (define (parse/data-arity3 s?)
@@ -44,7 +48,9 @@
           (let ((s (flag? s?)))
             (case (operand-mode op)
               ((imm)     (encode/data-processing-immediate       t c o s rd rn (operand-imm op)))
+              ((-imm)    (encode/data-processing-immediate       t c o s rd rn (operand-imm op)))
               ((reg+imm) (encode/data-processing-immediate-shift t c o s rd rn (operand-rn op) (operand-shtyp op) (operand-shoff op)))
+              ((reg-imm) (encode/data-processing-immediate-shift t c o s rd rn (operand-rn op) (operand-shtyp op) (operand-shoff op)))
               ((reg+reg) (encode/data-processing-register-shift  t c o s rd rn (operand-rn op) (operand-shtyp op) (operand-rs op)))))))))
 
 (define-opcode and  #b0000 (parse/data-arity3 #f))
@@ -182,12 +188,70 @@
 ;; ---
 ;; todo: load/store instructions
 
+(define (parse/load-store l? b?)
+  (minimeta
+   (and opcode? (? condition? #b1110) register? target? (? operand? '(imm 0))
+        (lambda (t o c rd target shifter)
+          (let ((p?      #f)
+                (w?      #f)
+                (u?      #f))
+
+            (case (target-mode target)
+              ((offset) (begin (set! p? #t) (set! w? #f)))
+              ((pre)    (begin (set! p? #t) (set! w? #t)))
+              ((post)   (begin (set! p? #f) (set! w? #f))))
+
+            (case (operand-mode shifter)
+              ((imm)     (encode/load-store-immediate-offset t c p? #t b? w? l? rd (target-rn target) (operand-imm shifter)))
+              ((-imm)    (encode/load-store-immediate-offset t c p? #f b? w? l? rd (target-rn target) (operand-imm shifter)))
+
+              ;; shifter (reg+imm rn shtyp shoff)
+              ((reg+imm) (encode/load-store-register-offset  t c p? #t b? w? l? rd (target-rn target) (operand-rn shifter) (operand-shtyp shifter) (operand-shoff shifter)))
+              ((reg-imm) (encode/load-store-register-offset  t c p? #f b? w? l? rd (target-rn target) (operand-rn shifter) (operand-shtyp shifter) (operand-shoff shifter)))
+
+              ;; shifter (reg+reg rn 1 rm)
+              ((reg+reg) (encode/load-store-register-offset  t c p? #t b? w? l? rd (target-rn target) (operand-rs shifter) (operand-shtyp shifter) (operand-rn shifter)))
+              ((reg-reg) (encode/load-store-register-offset  t c p? #f b? w? l? rd (target-rn target) (operand-rs shifter) (operand-shtyp shifter) (operand-rn shifter)))))))))
+
+(define (parse/load-store-t l? b?)
+  (minimeta
+   (and opcode? (? condition? #b1110) register? target? (? operand? '(imm 0))
+        (lambda (t o c rd target shifter)
+          (let/cc (return)
+            (let ((p? #f) (w? #t)) ; defaults for the unpriviledged funs
+              (unless (eqv? 'post (target-mode target))
+                (return #f))
+
+              (unless (memv (operand-mode shifter) '(reg+reg reg-reg reg+imm reg-imm))
+                (return #f))
+
+              (return
+               (case (operand-mode shifter)
+                 ;; shifter (reg+imm rn shtyp shoff)
+                 ((reg+imm) (encode/load-store-register-offset  t c p? #t b? w? l? rd (target-rn target) (operand-rn shifter) (operand-shtyp shifter) (operand-shoff shifter)))
+                 ((reg-imm) (encode/load-store-register-offset  t c p? #f b? w? l? rd (target-rn target) (operand-rn shifter) (operand-shtyp shifter) (operand-shoff shifter)))
+
+                 ;; shifter (reg+reg rn 1 rm)
+                 ((reg+reg) (encode/load-store-register-offset  t c p? #t b? w? l? rd (target-rn target) (operand-rs shifter) (operand-shtyp shifter) (operand-rn shifter)))
+                 ((reg-reg) (encode/load-store-register-offset  t c p? #f b? w? l? rd (target-rn target) (operand-rs shifter) (operand-shtyp shifter) (operand-rn shifter)))
+                 (else #f)))))))))
+
+(define-opcode ldr   #b000 (parse/load-store   #t #f))
+(define-opcode ldrt  #b000 (parse/load-store-t #t #f))
+(define-opcode ldrb  #b000 (parse/load-store   #t #t))
+(define-opcode ldrbt #b000 (parse/load-store-t #t #t))
+
+(define-opcode str   #b000 (parse/load-store   #f #f))
+(define-opcode strt  #b000 (parse/load-store-t #f #f))
+(define-opcode strb  #b000 (parse/load-store   #f #t))
+(define-opcode strbt #b000 (parse/load-store-t #f #t))
+
 ;; ---
 
 (define (parse/swap b?)
   (let ((b (flag? b?)))
     (minimeta
-     (and opcode? (? condition? #B1110) register? register? register?
+     (and opcode? (? condition? #b1110) register? register? register?
           (lambda (t _ c rd rm rn)
             (encode/swap t c b rd rn rm))))))
 

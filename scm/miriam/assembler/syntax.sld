@@ -14,6 +14,9 @@
           shift-type?
           shift-w-imm?
           shift-w-reg?
+          target?
+          target-mode
+          target-rn
           operand?
           operand-mode   
           operand-rn     

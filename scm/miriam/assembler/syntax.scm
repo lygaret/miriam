@@ -82,6 +82,10 @@
 (define (register? sym)
   (hash-table-ref registers-table sym (lambda () #f)))
 
+;; lookup the register number by symbol
+(define (-register? sym)
+  (and (simple-pair? sym '-) (hash-table-ref registers-table (cadr sym) (lambda () #f))))
+
 ;; (+ rx), (- rx), rx
 (define (sregister? form)
   (cond
@@ -131,6 +135,26 @@
                  (else
                   (return #f)))))))
 
+;; ----
+
+(define (target? form)
+  (let/cc (return)
+    (when/let ((rn (register? form)))
+      (return (cons 'offset rn)))
+
+    (when (simple-pair? form)
+      (when (eqv? (car form) '++)
+        (let ((rn (register? (cadr form))))
+          (return (and rn (cons 'pre rn)))))
+      (when (eqv? (cadr form) '++)
+        (let ((rn (register? (car form))))
+          (return (and rn (cons 'post rn))))))
+
+    (return #f)))
+
+(define (target-mode t) (car t))
+(define (target-rn   t) (cdr t))
+
 ;; -----
 
 (define shifts-table
@@ -151,7 +175,10 @@
 
 (define (operand? form)
   (let/cc (return)
+    (display (list "operand?" form))
+    (newline)
     (when/let ((imm (imm12? form)))    (return (list 'imm imm)))
+    (when/let ((imm (-imm12? form)))   (return (list '-imm imm)))
     (when/let ((rn  (register? form))) (return (list 'reg+imm rn (shift-type? 'lsl) 0)))
 
     (unless (pair? form) (return #f))
@@ -167,19 +194,21 @@
       (when/let ((shtyp (shift-type? (cadr form))))
         (when (null? (cddr form))
           (return #f))
-
-        (when/let ((imm (imm12?    (caddr form)))) (return (list 'reg+imm rn shtyp imm)))
-        (when/let ((rs  (register? (caddr form)))) (return (list 'reg+reg rn shtyp rs)))))
+        
+        (when/let ((imm (imm12?     (caddr form)))) (return (list 'reg+imm rn shtyp imm)))
+        (when/let ((imm (-imm12?    (caddr form)))) (return (list 'reg-imm rn shtyp imm)))
+        (when/let ((rs  (register?  (caddr form)))) (return (list 'reg+reg rn shtyp rs)))
+        (when/let ((rs  (-register? (caddr form)))) (return (list 'reg-reg rn shtyp rs))))
 
     ;; fall through
-    (return #f)))
+    (return #f))))
 
 (define (operand-mode   op) (car op))
-(define (operand-rn     op) (and (pair? op) (memv (car op) '(reg+imm reg+reg)) (cadr op)))
-(define (operand-shtyp  op) (and (pair? op) (memv (car op) '(reg+imm reg+reg)) (caddr op)))
-(define (operand-shoff  op) (and (pair? op) (eqv? (car op) 'reg+imm) (cadddr op)))
-(define (operand-rs     op) (and (pair? op) (eqv? (car op) 'reg+reg) (cadddr op)))
-(define (operand-imm    op) (and (pair? op) (eqv? (car op) 'imm) (cadr op)))
+(define (operand-rn     op) (and (pair? op) (memv (car op) '(reg+imm reg-imm reg+reg reg-reg)) (cadr op)))
+(define (operand-shtyp  op) (and (pair? op) (memv (car op) '(reg+imm reg-imm reg+reg reg-reg)) (caddr op)))
+(define (operand-shoff  op) (and (pair? op) (memv (car op) '(reg+imm reg-imm)) (cadddr op)))
+(define (operand-rs     op) (and (pair? op) (memv (car op) '(reg+reg reg-reg)) (cadddr op)))
+(define (operand-imm    op) (and (pair? op) (memv (car op) '(imm -imm)) (cadr op)))
 
 ;; rrx is special, it's an alias for ror with 0
 ;; other shifts are a pair of (name imm/reg)
