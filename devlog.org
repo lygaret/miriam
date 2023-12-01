@@ -2,11 +2,9 @@
 #+AUTHOR:  Jon Raphaelson
 #+EMAIL:   jon@accidental.cc
 
-* intro
-
 I'm working on a from-scratch scheme operating system.
 
-It will consist of:
+* general plan
 
 - an ARMv7 assembler (r7rs, run on host)
 
@@ -22,6 +20,9 @@ It will consist of:
     - study BEAM
 
 - a compiler for scheme to our bytecode vm
+  - "scheme" - this doesn't actually have to be a scheme
+  - if it's not 100%, it means writing a bunch of library code
+    - but rewriting srfis is probably good for my personal growth
 
 - a rewrite of the assembler and pre-scheme compiler to run on the bytecode compiler
 
@@ -43,4 +44,97 @@ It will consist of:
 $ guile --r7rs -L ./scm --fresh-auto-compile
 > ,m (miriam assembler opcodes)
 > (debug-emit (ldr r0 (++ r1) #x58))
+#+end_src
+
+* devlog
+
+** <2023-11-30 Thu> 
+
+At the high level, there's the assembler syntax itself:
+
+#+begin_src scheme
+  (assemble
+
+   ;; opcodes are instruction mnemonics
+   (mov r1 (r2 lsl 2))
+   (adcs r1 r3 r2)
+
+   ;; unquote and unquote-splice access the compile-time environment
+   (mov r1 (r2 lsl ,(name 1 2)))
+
+   ;; labels capture the current offset
+   (label name)
+ 
+   ;; blocks are labels with bodies that may use some block-specific syntax
+   ;; $enter is a virtual label for just before the block prologue (flags) (more or less synonym for the block name)
+   ;; $start is a virtual label for just after  the block prologue (flags) (for tail-cails)
+   ;; $end   is a virtual label for just before the block epilogue (flags) (for early exit)
+   ;; $exit  is a virtual label for just after  the block epilogue (flags) (for data offsets, maybe)
+   (block name (calling-convention)
+     (mov r1 (r2 lsl 2))
+     (adcs r1 r3 r2))
+
+   ;; definitions are valid at compile-time
+   (define (name a1 a2)
+     (some-calc a1 (ulation a2)))
+
+   ;; you can import definitions from elsewhere as well
+   (import (miriam asm prelude))
+
+   ;; pseudos syntactically modify the opcode forms
+   ;; and run in the compile-time environment (macros)
+   (pseudo (movi rd value)
+     (movw rd ,(b&  value #xFFFF))
+     (movt rd ,(b>> value 16))))
+#+end_src
+
+#+begin_src scheme
+  (org   #x1000)
+  (entry _start)
+
+  (extern sys-exit)
+
+  (pseudo (movimm32 reg imm)
+    (if/let ((imm (u/s-word imm)))
+      `((movw ,reg ,(b& imm #xFFFF))
+        (movt ,reg ,(b>> imm 16) (lsl 16))))
+    (syntax-error "expected imm to be a u/s-word"))
+
+  (procedure _start (naked)
+    (ldr r0 instr)
+    (ldr r1 outstr)
+    (mov r3 0)
+
+    (movimm32 instr)
+
+    (block
+      (ldrb r2, (r0 ++), #1)
+      (cmp r2 0)
+      (b ?eq $end)
+
+      (cmp r2 r3)
+      (b ?eq $start)
+
+      (strb r2 (r1 ++) #1)
+      (mov r3 r2)
+      (b $start))
+
+    (bl null-write)
+    (bl sys-exit))
+
+  (procedure null-write ()
+    (block
+      (ldrb r1 r0)              ; load the byte from the string
+      (cmp  r1 0)               ; if we've hit the null-terminator, bail
+      (b ?eq $end)              
+      (add r0 r0 #1)            ; otherwise, incr the pointer and loop
+      (b $start))               
+
+    (ldr r2 sp -4)              ; get the stored input address into r2
+    (sub r1 r0 r2)              ; calculate length
+    (ret))
+
+  (data ()
+    (instr   (res "I just want this thiiiing to woooork!"))
+    (outstr  (res (bytes 128))))
 #+end_src

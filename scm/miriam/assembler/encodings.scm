@@ -9,7 +9,7 @@
     (set! out (b+ (b<< out 4)    rn))
     (set! out (b+ (b<< out 4)    rd))
     (set! out (b+ (b<< out 12)  imm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/data-processing-immediate-shift t c op s rd rn rm shtyp shoff)
   ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6 5 4 3 2   1 10 9 8 7   6 5     4   3 2 1 0
@@ -24,7 +24,7 @@
     (set! out (b+ (b<< out 2) shtyp))
     (set! out (b+ (b<< out 1)     0))
     (set! out (b+ (b<< out 4)    rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/data-processing-register-shift t c op s rd rn rm shtyp rs)
   ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6 5 4 3 2   1 10 9 8 7   6 5     4   3 2 1 0
@@ -40,7 +40,7 @@
     (set! out (b+ (b<< out 2) shtyp))
     (set! out (b+ (b<< out 1)     1))
     (set! out (b+ (b<< out 4)    rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-immediate-offset t c p? u? b? w? l? rd rn imm)
   ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8 7 6 5 4 3 2 1 0
@@ -61,13 +61,11 @@
     (set! out (b+ (b<< out 4)      rn))
     (set! out (b+ (b<< out 4)      rd))
     (set! out (b+ (b<< out 12)    imm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-register-offset t c p? u? b? w? l? rd rn rm shtyp shoff)
   ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8 7   6 5 4   3   2 1 0
   ;; cond     | 0 1 1 | P U B W  L | rn      | rd      | shoff      | shtyp | 0 | rm
-  (display (list "encode:" p? u? b? w? l? rd rn rm shtyp shoff))
-  (newline)
   (let ((out 0)
         (p (flag? p?))
         (u (flag? u?))
@@ -86,7 +84,7 @@
     (set! out (b+ (b<< out 5)   shoff))
     (set! out (b+ (b<< out 3)   shtyp))
     (set! out (b+ (b<< out 4)      rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-multiple t c p? u? b? w? l? rn rlist)
   ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8 7   6 5 4   3   2 1 0
@@ -101,7 +99,7 @@
     (set! out (b+ (b<< out 1)      l?))
     (set! out (b+ (b<< out 4)      rn))
     (set! out (b+ (b<< out 16)  rlist))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/branch-with-link t c l? imm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20 9 8 7 6 5 4 3 2 1 10 9 8 7 6 5 4 3 2 1 0
@@ -110,8 +108,17 @@
     (set! out (b+  out              c))
     (set! out (b+ (b<< out 3)   #b101))
     (set! out (b+ (b<< out 1)      l?))
-    (set! out (b+ (b<< out 24)     imm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (set! out (b+ (b<< out 24) (b& #x00FFFFFF imm)))
+    (integer->bytevector out 4)))
+
+(define (encode/branch-link-exchange t c rm)
+  ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
+  ;; cond     | 0 0 0 1 | 0 0 1  0 | 1 1 1 1 | 1 1 1 1 | 1  1 1 1 | 0 0 1 1 | rm
+  (let ((out 0))
+    (set! out (b+  out                                   c))
+    (set! out (b+ (b<< out 24)  #b000100101111111111110011))
+    (set! out (b+ (b<< out 4)                           rm))
+    (integer->bytevector out 4)))
 
 (define (encode/copro-load-store t c p? u? s? w? l? rn crd cnum off)
   ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4 3 2 1 0
@@ -128,7 +135,7 @@
     (set! out (b+ (b<< out 4)     crd))
     (set! out (b+ (b<< out 4)    cnum))
     (set! out (b+ (b<< out 8)     off))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/copro-data-processing t c op1 crn crd cnum op2 crm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -142,7 +149,7 @@
     (set! out (b+ (b<< out 4)    cnum))
     (set! out (b+ (b<< out 3)     op2))
     (set! out (b+ (b<< out 5)     crm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/copro-register-transfer t c op1 l? crn rt cnum op2 crm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -159,7 +166,7 @@
     (set! out (b+ (b<< out 3)     op2))
     (set! out (b+ (b<< out 1)     #b1))
     (set! out (b+ (b<< out 4)     crm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/software-breakpoint t c imm)
   ;; 1 30 9 8   7 6 5 4 3 2 1 20   9 8 7 6 5 4 3 2 1 10 9 8   7 6 5 4   3 2 1 0
@@ -172,7 +179,7 @@
     (set! out (b+ (b<< out 12)     immhi))
     (set! out (b+ (b<< out 4)     #b0111))
     (set! out (b+ (b<< out 4)      immlo))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/software-interrupt t c intno)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20 9 8 7 6 5 4 3 2 1 10 9 8 7 6 5 4 3 2 1 0
@@ -181,7 +188,7 @@
     (set! out (b+  out              c))
     (set! out (b+ (b<< out 4)  #b1111))
     (set! out (b+ (b<< out 24)  intno))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/multiply-accumulate t c a s rd rn rs rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -195,7 +202,7 @@
     (set! out (b+ (b<< out 4)     rs))
     (set! out (b+ (b<< out 4) #b1001))
     (set! out (b+ (b<< out 4)     rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/multiply-accumulate-long t c u a s rdhi rdlo rs rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -211,7 +218,7 @@
     (set! out (b+ (b<< out 4)     rs))
     (set! out (b+ (b<< out 4) #b1001))
     (set! out (b+ (b<< out 4)     rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/swap t c b rd rn rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -224,7 +231,7 @@
     (set! out (b+ (b<< out 4)     rd))
     (set! out (b+ (b<< out 8) #b1001))
     (set! out (b+ (b<< out 4)     rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-halfword-register-offset t c p? u? w? l? rd rn rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -239,7 +246,7 @@
     (set! out (b+ (b<< out 4)     rd))
     (set! out (b+ (b<< out 8) #b1001))
     (set! out (b+ (b<< out 4)     rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-halfword-immediate-offset t c p? u? w? l? rd rn imm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -258,7 +265,7 @@
     (set! out (b+ (b<< out 4)  immhi))
     (set! out (b+ (b<< out 4) #b1011))
     (set! out (b+ (b<< out 4)  immlo))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-doubleword-register-offset t c p? u? w? rd rn s? rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -276,7 +283,7 @@
     (set! out (b+ (b<< out 1)     s?))
     (set! out (b+ (b<< out 1)      1))
     (set! out (b+ (b<< out 4)     rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-doubleword-immediate-offset t c p? u? w? rd rn s? imm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -297,7 +304,7 @@
     (set! out (b+ (b<< out 1)     s?))
     (set! out (b+ (b<< out 1)      1))
     (set! out (b+ (b<< out 4)  immlo))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-signed-halfword-register-offset t c p? u? w? h? rd rn h rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -315,7 +322,7 @@
     (set! out (b+ (b<< out 1)     h?))
     (set! out (b+ (b<< out 1)      1))
     (set! out (b+ (b<< out 4)     rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/load-store-signed-halfword-immediate-offset t c p? u? w? h? rd rn h imm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -336,7 +343,7 @@
     (set! out (b+ (b<< out 1)     h?))
     (set! out (b+ (b<< out 1)      1))
     (set! out (b+ (b<< out 4)  immlo))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/move-from-status-register t c r rd)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -348,7 +355,7 @@
     (set! out (b+ (b<< out 6) #b1111))
     (set! out (b+ (b<< out 4)     rd))
     (set! out     (b<< out 12))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/move-to-status-register t c r mask rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -361,7 +368,7 @@
     (set! out (b+ (b<< out 4)    mask))
     (set! out (b+ (b<< out 4)  #b1111))
     (set! out (b+ (b<< out 12)     rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/move-immediate-to-status-register t c r mask imm)
   ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8 7 6 5 4 3 2 1 0
@@ -374,7 +381,7 @@
     (set! out (b+ (b<< out 4)    mask))
     (set! out (b+ (b<< out 4)  #b1111))
     (set! out (b+ (b<< out 12)    imm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))
 
 (define (encode/clz t c rd rm)
   ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
@@ -385,13 +392,4 @@
     (set! out (b+ (b<< out 4)               rd))
     (set! out (b+ (b<< out 8)       #b11110001))
     (set! out (b+ (b<< out 4)               rm))
-    (emit-instruction t (integer->bytelist out 4))))
-
-(define (encode/branch-link-exchange t c rm)
-  ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4   3 2 1 0
-  ;; cond     | 0 0 0 1 | 0 0 1  0 | 1 1 1 1 | 1 1 1 1 | 1  1 1 1 | 0 0 1 1 | rm
-  (let ((out 0))
-    (set! out (b+  out                                   c))
-    (set! out (b+ (b<< out 24)  #b000100101111111111110011))
-    (set! out (b+ (b<< out 4)                           rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (integer->bytevector out 4)))

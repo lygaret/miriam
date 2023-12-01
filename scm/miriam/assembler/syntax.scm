@@ -82,6 +82,9 @@
 (define (register? sym)
   (hash-table-ref registers-table sym (lambda () #f)))
 
+(define (symbol-not-register? sym)
+  (and (symbol? sym) (not (register? sym)) sym)) 
+
 ;; lookup the register number by symbol
 (define (-register? sym)
   (and (simple-pair? sym '-) (hash-table-ref registers-table (cadr sym) (lambda () #f))))
@@ -153,7 +156,9 @@
     (return #f)))
 
 (define (target-mode t) (car t))
-(define (target-rn   t) (cdr t))
+(define (target-rn t)   (cdr t))
+(define (target-p? t)   (memv (target-mode t) '(offset pre)))
+(define (target-w? t)   (memv (target-mode t) '(pre)))
 
 ;; -----
 
@@ -173,13 +178,11 @@
 ;; (rn lsl imm )  reg + imm shift imm
 ;; (rn lsl rs)    reg + reg shift rn
 
-(define (operand? form)
+(define (shifter? form)
   (let/cc (return)
-    (display (list "operand?" form))
-    (newline)
-    (when/let ((imm (imm12? form)))    (return (list 'imm imm)))
-    (when/let ((imm (-imm12? form)))   (return (list '-imm imm)))
-    (when/let ((rn  (register? form))) (return (list 'reg+imm rn (shift-type? 'lsl) 0)))
+    (when/let ((imm   (imm12? form)))     (return (list 'imm imm)))
+    (when/let ((imm   (-imm12? form)))    (return (list '-imm imm)))
+    (when/let ((rn    (register? form)))  (return (list 'reg+imm rn (shift-type? 'lsl) 0)))
 
     (unless (pair? form) (return #f))
 
@@ -203,12 +206,12 @@
     ;; fall through
     (return #f))))
 
-(define (operand-mode   op) (car op))
-(define (operand-rn     op) (and (pair? op) (memv (car op) '(reg+imm reg-imm reg+reg reg-reg)) (cadr op)))
-(define (operand-shtyp  op) (and (pair? op) (memv (car op) '(reg+imm reg-imm reg+reg reg-reg)) (caddr op)))
-(define (operand-shoff  op) (and (pair? op) (memv (car op) '(reg+imm reg-imm)) (cadddr op)))
-(define (operand-rs     op) (and (pair? op) (memv (car op) '(reg+reg reg-reg)) (cadddr op)))
-(define (operand-imm    op) (and (pair? op) (memv (car op) '(imm -imm)) (cadr op)))
+(define (shifter-mode   op) (car op))
+(define (shifter-rn     op) (and (pair? op) (memv (car op) '(reg+imm reg-imm reg+reg reg-reg)) (cadr op)))
+(define (shifter-shtyp  op) (and (pair? op) (memv (car op) '(reg+imm reg-imm reg+reg reg-reg)) (caddr op)))
+(define (shifter-shoff  op) (and (pair? op) (memv (car op) '(reg+imm reg-imm)) (cadddr op)))
+(define (shifter-rs     op) (and (pair? op) (memv (car op) '(reg+reg reg-reg)) (cadddr op)))
+(define (shifter-imm    op) (and (pair? op) (memv (car op) '(imm -imm)) (cadr op)))
 
 ;; rrx is special, it's an alias for ror with 0
 ;; other shifts are a pair of (name imm/reg)
@@ -287,10 +290,17 @@
 (define (imm24? x)
   (integer-within? 0 x #x00FFFFFF))
 
+(define (imm24-wordaligned? x)
+  (and (s-word x) (zero? (b& x #b11)) x))
+
 ;; imm12 is an 8-bit immediate, rotated up to 15 positions
 ;; not all values can be expressed this way
 
 ;; this algorithem just brute force checks for a valid encoding
+
+(define (u/s-imm12? x)
+  (or (imm12? x)
+      (and (-imm12? x) (- x))))
 
 (define (imm12? x)
   (cond

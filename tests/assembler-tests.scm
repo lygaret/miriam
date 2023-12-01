@@ -1,17 +1,19 @@
-(reserve uart-tx-buffer (dwords 256))
-(reserve uart-rx-buffer (dwords 256))
+(import (scheme base))
+(import (scheme write))
 
-(const   uart-base-addr (dword #x12345678))
+(import (miriam assembler))
+(import (miriam assembler output))
 
-(block uart-init (export)
-  (mov r0 (imm 10))
-  (mov r1 (imm  3))
-  (bl (local doadd))
+(call-with-values
+    (lambda () 
+      (assemble
+       (adr r1 start)
+       (mov r0 r1)
+       (label start)
+       (adr r1 start)
+       (mov r0 r1)
+       (adr r1 start)))
 
-  (label stop
-    (mov r0 (imm #x18))
-    (ldr r1 (ref #x20026))
-    (svc #x123456))
-
-  (label doadd
-    (add r0 r0 r1)))
+  (lambda (bytes out)
+    (display (bytevector->hex-string bytes))
+    (newline)))

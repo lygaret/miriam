@@ -3,6 +3,7 @@
           register?
           sregister? sregister-r sregister-pos?
           wregister? wregister-r wregister-w?
+          symbol-not-register?
           pre-index-reg?
           post-index-reg?
           reglist?
@@ -17,16 +18,19 @@
           target?
           target-mode
           target-rn
-          operand?
-          operand-mode   
-          operand-rn     
-          operand-shtyp  
-          operand-shoff  
-          operand-rs     
-          operand-imm    
+          target-p?
+          target-w?
+          shifter?
+          shifter-mode   
+          shifter-rn     
+          shifter-shtyp  
+          shifter-shoff  
+          shifter-rs     
+          shifter-imm    
           barrier-option?
-          imm3? imm4? imm5? imm16? imm24?
-          imm12? -imm12?)
+          imm3? imm4? imm5? imm16?
+          imm24? imm24-wordaligned?
+          imm12? -imm12? u/s-imm12?)
 
   (import (scheme base))
   (import (scheme cxr))

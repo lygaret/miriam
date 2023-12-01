@@ -35,7 +35,7 @@
   (minimeta
    (and opcode?
         (lambda (t o)
-          (emit-instruction t (integer->bytelist o 4))))))
+          (emit-instruction t (integer->bytevector o 4))))))
 
 ;; direct emit of conditional opcodes
 
@@ -46,7 +46,7 @@
           (let ((out 0))
             (set! out (b<< (b+ out c) 28))
             (set! out (b+ out o))
-            (emit-instruction t (integer->bytelist out 4)))))))
+            (emit-instruction t (integer->bytevector out 4)))))))
 
 ;; data processing (register)
 ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6 5 4 3 2   1 10 9 8 7   6 5    4   3 2 1 0
@@ -62,7 +62,7 @@
     (set! out (b<< (b+ out shoff) 2)) ;; add the shift offset
     (set! out (b<< (b+ out shtyp) 5)) ;; add the shift type
     (set! out (b+ out rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 ;; data processing (register-shifted register)
 ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6 5 4 3 2 1 10 9 8   7   6 5   4   3 2 1 0
@@ -78,7 +78,7 @@
     (set! out (b<< (b+ out shtyp) 1)) ;; add the shift type
     (set! out (b<< (b+ out #b1)   4)) ;; add the rs flag
     (set! out (b+ out rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 ;; data processing (immediate 12bit)
 ;; 1 30 9 8   7 6 5   4 3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8   7 6 5 4 3 2 1 0
@@ -92,7 +92,7 @@
     (set! out (b<< (b+ out rn)    4))
     (set! out (b<< (b+ out rd)   12))
     (set! out (b+ out imm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 ;; data processing (immediate 16bit)
 ;; 1 30 9 8   7 6 5 4   3 2 1 20   9 8 7 6   5 4 3 2   1 10 9 8 7 6 5 4 3 2 1 0
@@ -108,7 +108,7 @@
     (set! out (b<< (b+ out imm4)   4))
     (set! out (b<< (b+ out rd)    12))
     (set! out (b+ out imm12))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 (define (data-emit flags)
   (minimeta
@@ -156,7 +156,7 @@
     (set! out (b<< (b+ out c)     4)) ;; cond flags
     (set! out (b<< (b+ out op1)  24)) ;; opcode
     (set! out (b+ out imm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 (define b-emit
   (minimeta
@@ -178,7 +178,7 @@
     (set! out (b<< (b+ out lsb)   3))
     (set! out (b<< (b+ out #b001) 4))
     (set! out (b+ out rn))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 (define bfc-emit
   (let ((lsb?   (lambda (x) (integer-within? 0 x 31)))
@@ -214,7 +214,7 @@
     (set! out (b<< (b+ out imm12)  4))
     (set! out (b<< (b+ out #b0111) 4)) ;; opcode
     (set! out (b+ out imm4))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 (define bkpt-emit
   (minimeta
@@ -233,7 +233,7 @@
     (set! out (b<< (b+ out rd)         8))
     (set! out (b<< (b+ out #b11110001) 4))
     (set! out (b+ out rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 (define clz-emit
   (minimeta
@@ -253,7 +253,7 @@
             (set! out (b<< (b+ out c) 24))
             (set! out (b<< (b+ out o)  4))
             (set! out (b+ out imm4))
-            (emit-instruction t (integer->bytelist out 4)))))))
+            (emit-instruction t (integer->bytevector out 4)))))))
 
 ;; barrier + options
 
@@ -264,7 +264,7 @@
           (let ((out 0))
             (set! out (b<< (b+ out o) 4))
             (set! out (b+ out opt))
-            (emit-instruction t (integer->bytelist out 4)))))))
+            (emit-instruction t (integer->bytevector out 4)))))))
 
 ;; load multiple + action
 ;; 1 30 9 8   7 6 5 4 3 2   1   20  9 8 7 6   5 4 3 2 1 10 9 8 7 6 5 4 3 2 1 0
@@ -283,7 +283,7 @@
             (set! out (b<< (b+ out 1)          4))
             (set! out (b<< (b+ out rn)        16))
             (set! out (b+ out rl))
-            (emit-instruction t (integer->bytelist out 4)))))))
+            (emit-instruction t (integer->bytevector out 4)))))))
 
 ;; ldr immediate emit
 ;;                      add
@@ -303,7 +303,7 @@
     (set! out (b<< (b+ out rn)         4))
     (set! out (b<< (b+ out rt)        12))
     (set! out (b+ out imm12))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 ;; ldr regsr emit
 ;;                     add
@@ -326,7 +326,7 @@
     (set! out (b<< (b+ out typ)        1))
     (set! out (b<< (b+ out 0)          4))
     (set! out (b+ out rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 ;; ldr extended immediate emit
 ;;                      add
@@ -350,7 +350,7 @@
     (set! out (b<< (b+ out imm4h)      4))
     (set! out (b<< (b+ out o)          4))
     (set! out (b+ out imm4l))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 ;; ldr extended regsr emit
 ;;                      add
@@ -372,7 +372,7 @@
     (set! out (b<< (b+ out 0)          4))
     (set! out (b<< (b+ out 1)          4))
     (set! out (b+ out rm))
-    (emit-instruction t (integer->bytelist out 4))))
+    (emit-instruction t (integer->bytevector out 4))))
 
 (define (ldr-emit flags)
   (let ((s? (memv 'sizemod flags)))

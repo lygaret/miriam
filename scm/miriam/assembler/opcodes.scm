@@ -7,6 +7,14 @@
     ((_ name opcode emitter)
      (hash-table-set! opcodes-table 'name (list opcode emitter)))))
 
+(define-syntax define-instruction
+  (syntax-rules (and or)
+    ((_ ((name code . locals) ...) ((parser ...) handler) ...)
+     (begin
+       (define-opcode name code
+         (let locals
+           (minimeta (or (and parser ... handler) ...)))) ...))))
+
 (define (opcode? sym)
   (let ((entry (hash-table-ref opcodes-table sym (lambda () #f))))
     (and entry (car entry))))
@@ -15,310 +23,336 @@
   (let ((entry (hash-table-ref opcodes-table sym (lambda () #f))))
     (and entry (cadr entry))))
 
-;; ---
-
-(define (parse/data-arity1 s?)
-  (let ((s (flag? s?)))
-    (minimeta
-     (and opcode? (? condition? #b1110) register? operand?
-          (lambda (t o c rd op)
-            (case (operand-mode op)
-              ((imm)     (encode/data-processing-immediate       t c o s rd 0 (operand-imm op)))
-              ((-imm)    (encode/data-processing-immediate       t c o s rd 0 (operand-imm op)))
-              ((reg+imm) (encode/data-processing-immediate-shift t c o s rd 0 (operand-rn op) (operand-shtyp op) (operand-shoff op)))
-              ((reg-imm) (encode/data-processing-immediate-shift t c o s rd 0 (operand-rn op) (operand-shtyp op) (operand-shoff op)))
-              ((reg+reg) (encode/data-processing-register-shift  t c o s rd 0 (operand-rn op) (operand-shtyp op) (operand-rs op)))))))))
-
-(define (parse/data-arity2 s?)
-  (minimeta
-   (and opcode? (? condition? #b1110) register? operand?
-        (lambda (t o c rn op)
-          (let ((s (flag? s?)))
-            (case (operand-mode op)
-              ((imm)     (encode/data-processing-immediate       t c o s 0 rn (operand-imm op)))
-              ((-imm)    (encode/data-processing-immediate       t c o s 0 rn (operand-imm op)))
-              ((reg+imm) (encode/data-processing-immediate-shift t c o s 0 rn (operand-rn op) (operand-shtyp op) (operand-shoff op)))
-              ((reg-imm) (encode/data-processing-immediate-shift t c o s 0 rn (operand-rn op) (operand-shtyp op) (operand-shoff op)))
-              ((reg+reg) (encode/data-processing-register-shift  t c o s 0 rn (operand-rn op) (operand-shtyp op) (operand-rs op)))))))))
-
-(define (parse/data-arity3 s?)
-  (minimeta
-   (and opcode? (? condition? #b1110) register? register? operand?
-        (lambda (t o c rd rn op)
-          (let ((s (flag? s?)))
-            (case (operand-mode op)
-              ((imm)     (encode/data-processing-immediate       t c o s rd rn (operand-imm op)))
-              ((-imm)    (encode/data-processing-immediate       t c o s rd rn (operand-imm op)))
-              ((reg+imm) (encode/data-processing-immediate-shift t c o s rd rn (operand-rn op) (operand-shtyp op) (operand-shoff op)))
-              ((reg-imm) (encode/data-processing-immediate-shift t c o s rd rn (operand-rn op) (operand-shtyp op) (operand-shoff op)))
-              ((reg+reg) (encode/data-processing-register-shift  t c o s rd rn (operand-rn op) (operand-shtyp op) (operand-rs op)))))))))
-
-(define-opcode and  #b0000 (parse/data-arity3 #f))
-(define-opcode ands #b0000 (parse/data-arity3 #t))
-(define-opcode eor  #b0001 (parse/data-arity3 #f))
-(define-opcode eors #b0001 (parse/data-arity3 #t))
-(define-opcode sub  #b0010 (parse/data-arity3 #f))
-(define-opcode subs #b0010 (parse/data-arity3 #t))
-(define-opcode rsb  #b0011 (parse/data-arity3 #f))
-(define-opcode rsbs #b0011 (parse/data-arity3 #t))
-(define-opcode add  #b0100 (parse/data-arity3 #f))
-(define-opcode adds #b0100 (parse/data-arity3 #t))
-(define-opcode adc  #b0101 (parse/data-arity3 #f))
-(define-opcode adcs #b0101 (parse/data-arity3 #t))
-(define-opcode sbc  #b0110 (parse/data-arity3 #f))
-(define-opcode sbcs #b0110 (parse/data-arity3 #t))
-(define-opcode rsc  #b0111 (parse/data-arity3 #f))
-(define-opcode rscs #b0111 (parse/data-arity3 #t))
-(define-opcode tst  #b1000 (parse/data-arity2 #t))
-(define-opcode teq  #b1001 (parse/data-arity2 #t))
-(define-opcode cmp  #b1010 (parse/data-arity2 #t))
-(define-opcode cmn  #b1011 (parse/data-arity2 #t))
-(define-opcode orr  #b1100 (parse/data-arity3 #f))
-(define-opcode orrs #b1100 (parse/data-arity3 #t))
-(define-opcode mov  #b1101 (parse/data-arity1 #f))
-(define-opcode movs #b1101 (parse/data-arity1 #t))
-(define-opcode bic  #b1110 (parse/data-arity3 #f))
-(define-opcode bics #b1110 (parse/data-arity3 #t))
-(define-opcode mvn  #b1111 (parse/data-arity1 #f))
-(define-opcode mvns #b1111 (parse/data-arity1 #t))
+(define (adjust/pcrel n)       (/ (- n 8) 4))
+(define (adjust/pcrel-imm12 n) (b& (adjust/pcrel n) #xFFF))
 
 ;; ---
 
-(define (parse/mov-alias s?)
-  (let ((s (flag? s?))
-        (o (opcode? 'mov)))
-    (minimeta
-     (and shift-type? (? condition? #b1110) register? register?
-          (or (and imm5?
-                   (lambda (t shtyp c rd rm shoff)
-                     (encode/data-processing-immediate-shift t c o s rd 0 rm shtyp shoff)))
-              (and register?
-                   (lambda (t shtyp c rd rm rs)
-                     (encode/data-processing-register-shift t c o s rd 0 rm shtyp rs))))))))
+(define-instruction
+  ((and  #b0000 (s 0))
+   (ands #b0000 (s 1))
+   (eor  #b0001 (s 0))
+   (eors #b0001 (s 1))
+   (sub  #b0010 (s 0))
+   (subs #b0010 (s 1))
+   (rsb  #b0011 (s 0))
+   (rsbs #b0011 (s 1))
+   (add  #b0100 (s 0))
+   (adds #b0100 (s 1))
+   (adc  #b0101 (s 0))
+   (adcs #b0101 (s 1))
+   (sbc  #b0110 (s 0))
+   (sbcs #b0110 (s 1))
+   (rsc  #b0111 (s 0))
+   (rscs #b0111 (s 1))
+   (orr  #b1100 (s 0))
+   (orrs #b1100 (s 1))
+   (bic  #b1110 (s 0))
+   (bics #b1110 (s 1)))
 
-(define-opcode asr  #b1101 (parse/mov-alias #f))
-(define-opcode asrs #b1101 (parse/mov-alias #t))
-(define-opcode lsl  #b1101 (parse/mov-alias #f))
-(define-opcode lsls #b1101 (parse/mov-alias #t))
-(define-opcode lsr  #b1101 (parse/mov-alias #f))
-(define-opcode lsrs #b1101 (parse/mov-alias #t))
-(define-opcode ror  #b1101 (parse/mov-alias #f))
-(define-opcode rors #b1101 (parse/mov-alias #t))
+  ((opcode? (? condition? #b1110) register? register? shifter?)
+   (lambda (t o c rd rn op)
+     (case (shifter-mode op)
+       ((imm)     (encode/data-processing-immediate       t c o s rd rn (shifter-imm op)))
+       ((-imm)    (encode/data-processing-immediate       t c o s rd rn (shifter-imm op)))
+       ((reg+imm) (encode/data-processing-immediate-shift t c o s rd rn (shifter-rn op) (shifter-shtyp op) (shifter-shoff op)))
+       ((reg-imm) (encode/data-processing-immediate-shift t c o s rd rn (shifter-rn op) (shifter-shtyp op) (shifter-shoff op)))
+       ((reg+reg) (encode/data-processing-register-shift  t c o s rd rn (shifter-rn op) (shifter-shtyp op) (shifter-rs op)))))))
 
-(define parse/movw
-  (minimeta
-   (and opcode? (? condition? #b1110) register? imm16?
-        (lambda (t o c rd imm)
-          (let ((immhi (b>> imm 12))
-                (immlo (b&  imm #xFFF)))
-            (encode/data-processing-immediate t c o 0 rd immhi immlo))))))
+  
 
-(define-opcode movw #b1000 parse/movw)
+(define-instruction
+  ((adr #b0000))
+
+  ((opcode? (? condition? #b1110) register? symbol-not-register?)
+   (lambda (t o c rd label . instr)
+     (let* ((pc       (register? 'pc))
+            (offset   (emit-relocation t label instr))
+            (pcrel    (- offset 8))
+            (imm12    (imm12? (abs pcrel)))
+            (opcode   (if (<= 0 pcrel) (opcode? 'add) (opcode? 'sub))))
+       (log "adr instruction:" (asm-fillptr t) offset pcrel opcode imm12)
+
+       (if/let ((imm (imm12? (abs pcrel))))
+         (encode/data-processing-immediate t c opcode 0 rd pc imm12)
+         (emit-error t "label doesn't fit in adr" instr))))))
+       
+;; ---
+
+(define-instruction
+  ((tst #b1000)
+   (teq #b1001)
+   (cmp #b1010)
+   (cmn #b1011))
+
+  ;; tst rm [+-imm, rm, rm asr +- imm, rm asr rs]
+  ((opcode? (? condition? #b1110) register? shifter?)
+   (lambda (t o c rn op)
+     (case (shifter-mode op)
+       ((imm)     (encode/data-processing-immediate       t c o 1 0 rn (shifter-imm op)))
+       ((-imm)    (encode/data-processing-immediate       t c o 1 0 rn (shifter-imm op)))
+       ((reg+imm) (encode/data-processing-immediate-shift t c o 1 0 rn (shifter-rn op) (shifter-shtyp op) (shifter-shoff op)))
+       ((reg-imm) (encode/data-processing-immediate-shift t c o 1 0 rn (shifter-rn op) (shifter-shtyp op) (shifter-shoff op)))
+       ((reg+reg) (encode/data-processing-register-shift  t c o 1 0 rn (shifter-rn op) (shifter-shtyp op) (shifter-rs op)))))))
 
 ;; ---
 
-(define (parse/multiply s?)
-  (let ((s (flag? s?)))
-    (minimeta
-     (and opcode? (? condition? #b1110) register? register? register?
-          (lambda (t o c rd rn rm)
-            (encode/multiply-accumulate t c 0 s rd 0 rm rn))))))
+(define-instruction
+  ((mov  #b1101 (s 0))
+   (movs #b1101 (s 1))
+   (mvn  #b1111 (s 0))
+   (mvns #b1111 (s 1)))
 
-(define (parse/multiply-accum s?)
-  (let ((s (flag? s?)))
-    (minimeta
-     (and opcode? (? condition? #b1110) register? register? register? register?
-          (lambda (t o c rd rn rm ra)
-            (encode/multiply-accumulate t c 1 s rd ra rm rn))))))
+  ;; mov ?c dest [+-imm, rm, rm asr +-imm, rm asr rs]
+  ((opcode? (? condition? #b1110) register? shifter?)
+   (lambda (t o c rd op)
+     (case (shifter-mode op)
+       ((imm)     (encode/data-processing-immediate       t c o s rd 0 (shifter-imm op)))
+       ((-imm)    (encode/data-processing-immediate       t c o s rd 0 (shifter-imm op)))
+       ((reg+imm) (encode/data-processing-immediate-shift t c o s rd 0 (shifter-rn op) (shifter-shtyp op) (shifter-shoff op)))
+       ((reg-imm) (encode/data-processing-immediate-shift t c o s rd 0 (shifter-rn op) (shifter-shtyp op) (shifter-shoff op)))
+       ((reg+reg) (encode/data-processing-register-shift  t c o s rd 0 (shifter-rn op) (shifter-shtyp op) (shifter-rs op)))))))
 
-(define-opcode mul  #b000 (parse/multiply #f))
-(define-opcode muls #b000 (parse/multiply #t))
-(define-opcode mla  #b000 (parse/multiply-accum #f))
-(define-opcode mlas #b000 (parse/multiply-accum #t))
+(define-instruction
+  ((movw #b1000))
 
-(define (parse/multiply-long u? a? s?)
-  (let ((u (flag? u?))
-        (a (flag? a?))
-        (s (flag? s?)))
-    (minimeta
-     (and opcode? (? condition? #b1110) register? register? register? register?
-          (lambda (t o c rdlo rdhi rn rm)
-            (encode/multiply-accumulate-long t c u a s rdhi rdlo rn rm))))))
+  ((opcode? (? condition? #b1110) register? imm16?)
+   (lambda (t o c rd imm)
+     (let ((immhi (b>> imm 12))
+           (immlo (b&  imm #xFFF)))
+       (encode/data-processing-immediate t c o 0 rd immhi immlo)))))
 
-(define-opcode umull  #b000 (parse/multiply-long #f #f #f))
-(define-opcode umulls #b000 (parse/multiply-long #f #f #t))
-(define-opcode smull  #b000 (parse/multiply-long #t #f #f))
-(define-opcode smulls #b000 (parse/multiply-long #t #f #t))
-(define-opcode umlal  #b000 (parse/multiply-long #f #t #f))
-(define-opcode umlals #b000 (parse/multiply-long #f #t #t))
-(define-opcode smlal  #b000 (parse/multiply-long #t #t #f))
-(define-opcode smlals #b000 (parse/multiply-long #t #t #t))
+(define-instruction
+  ((asr  #b1101 (s 0))
+   (asrs #b1101 (s 1))
+   (lsl  #b1101 (s 0))
+   (lsls #b1101 (s 1))
+   (lsr  #b1101 (s 0))
+   (lsrs #b1101 (s 1))
+   (ror  #b1101 (s 0))
+   (rors #b1101 (s 1)))
 
-;; ---
+  ((shift-type? (? condition? #b1110) register? register? imm5?)
+   (lambda (t shtyp c rd rm shoff)
+     (encode/data-processing-immediate-shift t c (opcode? 'mov) s rd 0 rm shtyp shoff)))
 
-(define parse/clz
-  (minimeta
-   (and opcode? (? condition? #b1110) register? register?
-        (lambda (t o c rd rm)
-          (encode/clz t c rd rm)))))
-
-(define-opcode clz    #b000 parse/clz)
+  ((shift-type? (? condition? #b1110) register? register? register?)
+   (lambda (t shtyp c rd rm rs)
+     (encode/data-processing-register-shift t c (opcode? 'mov) s rd 0 rm shtyp rs))))
 
 ;; ---
 
-(define parse/mrs-read-status
-  (minimeta
-   (and opcode? (? condition? #b1110) register? sysregister?
-        (lambda (t o c rd spec)
-          (encode/move-from-status-register t c spec rd)))))
+(define-instruction
+  ((b  #b1010 (l? #f))
+   (bl #b1010 (l? #t)))
 
-(define parse/msr-write-status
-  (minimeta
-   (and opcode? (? condition? #b1110) sysregister-mask?
-        (or (and register?
-                 (lambda (t o c mask rn)
-                   (encode/move-to-status-register t c 0 mask rn)))
-            (and imm12?
-                 (lambda (t o c mask imm)
-                   (encode/move-immediate-to-status-register t c 0 mask imm)))))))
+  ;; b ?c +- 
+  ((opcode? (? condition? #b1110) imm24-wordaligned?)
+   (lambda (t o c imm)
+     (let ((adjusted (adjust/pcrel imm)))
+       (encode/branch-with-link t c (flag? l?) adjusted))))
 
-(define-opcode mrs #b000 parse/mrs-read-status)
-(define-opcode msr #b000 parse/msr-write-status)
+  ;; any other number is an error we should report
+  ((opcode? (? condition? #b1110) number?)
+   (lambda (t o c imm)
+     (emit-error t "branch target is too far away, or not word aligned" imm)))
+  
+  ;; b ?c label
+  ((opcode? (? condition? #b1110) symbol-not-register?)
+   (lambda (t o c label . instr)
+     (let* ((offset   (emit-relocation t label instr))
+            (offset   (imm24-wordaligned? offset))
+            (adjusted (and offset (adjust/pcrel offset))))
+       (if adjusted
+           (encode/branch-with-link t c (flag? l?) adjusted)
+           (emit-error t "label is too far away, or not word aligned" label offset))))))
 
-;; ---
-;; todo: load/store instructions
+(define-instruction
+  ((bx #b1011))
 
-(define (parse/load-store l? b?)
-  (minimeta
-   (and opcode? (? condition? #b1110) register? target? (? operand? '(imm 0))
-        (lambda (t o c rd target shifter)
-          (let ((p?      #f)
-                (w?      #f)
-                (u?      #f))
-
-            (case (target-mode target)
-              ((offset) (begin (set! p? #t) (set! w? #f)))
-              ((pre)    (begin (set! p? #t) (set! w? #t)))
-              ((post)   (begin (set! p? #f) (set! w? #f))))
-
-            (case (operand-mode shifter)
-              ((imm)     (encode/load-store-immediate-offset t c p? #t b? w? l? rd (target-rn target) (operand-imm shifter)))
-              ((-imm)    (encode/load-store-immediate-offset t c p? #f b? w? l? rd (target-rn target) (operand-imm shifter)))
-
-              ;; shifter (reg+imm rn shtyp shoff)
-              ((reg+imm) (encode/load-store-register-offset  t c p? #t b? w? l? rd (target-rn target) (operand-rn shifter) (operand-shtyp shifter) (operand-shoff shifter)))
-              ((reg-imm) (encode/load-store-register-offset  t c p? #f b? w? l? rd (target-rn target) (operand-rn shifter) (operand-shtyp shifter) (operand-shoff shifter)))
-
-              ;; shifter (reg+reg rn 1 rm)
-              ((reg+reg) (encode/load-store-register-offset  t c p? #t b? w? l? rd (target-rn target) (operand-rs shifter) (operand-shtyp shifter) (operand-rn shifter)))
-              ((reg-reg) (encode/load-store-register-offset  t c p? #f b? w? l? rd (target-rn target) (operand-rs shifter) (operand-shtyp shifter) (operand-rn shifter)))))))))
-
-(define (parse/load-store-t l? b?)
-  (minimeta
-   (and opcode? (? condition? #b1110) register? target? (? operand? '(imm 0))
-        (lambda (t o c rd target shifter)
-          (let/cc (return)
-            (let ((p? #f) (w? #t)) ; defaults for the unpriviledged funs
-              (unless (eqv? 'post (target-mode target))
-                (return #f))
-
-              (unless (memv (operand-mode shifter) '(reg+reg reg-reg reg+imm reg-imm))
-                (return #f))
-
-              (return
-               (case (operand-mode shifter)
-                 ;; shifter (reg+imm rn shtyp shoff)
-                 ((reg+imm) (encode/load-store-register-offset  t c p? #t b? w? l? rd (target-rn target) (operand-rn shifter) (operand-shtyp shifter) (operand-shoff shifter)))
-                 ((reg-imm) (encode/load-store-register-offset  t c p? #f b? w? l? rd (target-rn target) (operand-rn shifter) (operand-shtyp shifter) (operand-shoff shifter)))
-
-                 ;; shifter (reg+reg rn 1 rm)
-                 ((reg+reg) (encode/load-store-register-offset  t c p? #t b? w? l? rd (target-rn target) (operand-rs shifter) (operand-shtyp shifter) (operand-rn shifter)))
-                 ((reg-reg) (encode/load-store-register-offset  t c p? #f b? w? l? rd (target-rn target) (operand-rs shifter) (operand-shtyp shifter) (operand-rn shifter)))
-                 (else #f)))))))))
-
-(define-opcode ldr   #b000 (parse/load-store   #t #f))
-(define-opcode ldrt  #b000 (parse/load-store-t #t #f))
-(define-opcode ldrb  #b000 (parse/load-store   #t #t))
-(define-opcode ldrbt #b000 (parse/load-store-t #t #t))
-
-(define-opcode str   #b000 (parse/load-store   #f #f))
-(define-opcode strt  #b000 (parse/load-store-t #f #f))
-(define-opcode strb  #b000 (parse/load-store   #f #t))
-(define-opcode strbt #b000 (parse/load-store-t #f #t))
+  ;; bx ?c register 
+  ((opcode? (? condition? #b1110) register?)
+   (lambda (t o c reg)
+     (encode/branch-link-exchange t c reg))))
 
 ;; ---
 
-(define (parse/swap b?)
-  (let ((b (flag? b?)))
-    (minimeta
-     (and opcode? (? condition? #b1110) register? register? register?
-          (lambda (t _ c rd rm rn)
-            (encode/swap t c b rd rn rm))))))
+(define-instruction
+  ((mul  #b000 (s 0))
+   (muls #b000 (s 1)))
 
-(define-opcode swp  #b000 (parse/swap #f))
-(define-opcode swpb #b000 (parse/swap #t))
+  ((opcode? (? condition? #b1110) register? register? register?)
+   (lambda (t o c rd rn rm)
+     (encode/multiply-accumulate t c 0 s rd 0 rm rn))))
+
+(define-instruction
+  ((mla  #b000 (s 0))
+   (mlas #b000 (s 1)))
+
+  ((opcode? (? condition? #b1110) register? register? register? register?)
+   (lambda (t o c rd rn rm ra)
+     (encode/multiply-accumulate t c 1 s rd ra rm rn))))
+
+(define-instruction
+  ((umull  #b000 (u 0) (a 0) (s 0))
+   (umulls #b000 (u 0) (a 0) (s 1))
+   (smull  #b000 (u 1) (a 0) (s 0))
+   (smulls #b000 (u 1) (a 0) (s 1))
+   (umlal  #b000 (u 0) (a 1) (s 0))
+   (umlals #b000 (u 0) (a 1) (s 1))
+   (smlal  #b000 (u 1) (a 1) (s 0))
+   (smlals #b000 (u 1) (a 1) (s 1)))
+
+  ((opcode? (? condition? #b1110) register? register? register? register?)
+   (lambda (t o c rdlo rdhi rn rm)
+     (encode/multiply-accumulate-long t c u a s rdhi rdlo rn rm))))
 
 ;; ---
 
-(define parse/bkpt
-  (minimeta
-   (and opcode? u-hword
-        (lambda (t _ imm) (encode/software-breakpoint t #b1110 imm)))))
+(define-instruction
+  ((clz #b0000))
 
-(define parse/swi
-  (minimeta
-   (and opcode? (? condition? #b1110) imm24?
-        (lambda (t _ c imm) (encode/software-interrupt t c imm)))))
-
-(define-opcode bkpt #b000 parse/bkpt)
-(define-opcode swi  #b000 parse/swi)
-(define-opcode svc  #b000 parse/swi)
+  ((opcode? (? condition? #b1110) register? register?)
+   (lambda (t o c rd rm)
+     (encode/clz t c rd rm))))
 
 ;; ---
 
-(define parse/cdp1
-  (minimeta
-   (and opcode? (? condition? #b1110) copro? imm4? copro-register? copro-register? copro-register? (? imm3? #b000)
-        (lambda (t o c cpnum op1 crd crn crm op2)
-          (encode/copro-data-processing t c op1 crn crd cpnum op2 crm)))))
+(define-instruction
+  ((mrs #b0000))
 
-(define parse/cdp2
-  (minimeta
-   (and opcode? copro? imm4? copro-register? copro-register? copro-register? (? imm3? #b000)
-        (lambda (t o cpnum op1 crd crn crm op2)
-          (encode/copro-data-processing t #b1111 op1 crn crd cpnum op2 crm)))))
+  ((opcode? (? condition? #b1110) register? sysregister?)
+   (lambda (t o c rd spec)
+     (encode/move-from-status-register t c spec rd))))
 
-(define-opcode cdp     #b000 parse/cdp1)
-(define-opcode cdp2    #b000 parse/cdp2)
+(define-instruction
+  ((msr #b0000))
 
-(define parse/mrc-read-copro
-  (minimeta
-   (and opcode? (? condition? #b1110) copro? imm4? register? copro-register? copro-register? (? imm3? #b000)
-        (lambda (t o c cpnum op1 rt crn crm op2)
-          (encode/copro-register-transfer t c op1 #t crn rt cpnum op2 crm)))))
+  ((opcode? (? condition? #b1110) sysregister-mask? register?)
+   (lambda (t o c mask rn)
+     (encode/move-to-status-register t c 0 mask rn)))
 
-(define parse/mrc-read-copro2
-  (minimeta
-   (and opcode? copro? imm4? register? copro-register? copro-register? (? imm3? #b000)
-        (lambda (t o cpnum op1 rt crn crm op2)
-          (encode/copro-register-transfer t #b1111 op1 #t crn rt cpnum op2 crm)))))
+  ((opcode? (? condition? #b1110) sysregister-mask? imm12?)
+   (lambda (t o c mask imm)
+     (encode/move-immediate-to-status-register t c 0 mask imm))))
 
-(define parse/mcr-write-copro
-  (minimeta
-   (and opcode? (? condition? #b1110) copro? imm4? register? copro-register? copro-register? (? imm3? #b000)
-        (lambda (t o c cpnum op1 rt crn crm op2)
-          (encode/copro-register-transfer t c op1 #f crn rt cpnum op2 crm)))))
+;; ---
 
-(define parse/mcr-write-copro2
-  (minimeta
-   (and opcode? copro? imm4? register? copro-register? copro-register? (? imm3? #b000)
-        (lambda (t o cpnum op1 rt crn crm op2)
-          (encode/copro-register-transfer t #b1111 op1 #f crn rt cpnum op2 crm)))))
+(define-instruction
+  ((ldr  #b000 (l? #t) (b? #f))
+   (ldrb #b000 (l? #t) (b? #t))
+   (str  #b000 (l? #f) (b? #f))
+   (strb #b000 (l? #f) (b? #t)))
 
-(define-opcode mcr     #b000 parse/mcr-write-copro)
-(define-opcode mcr2    #b000 parse/mcr-write-copro2)
-(define-opcode mrc     #b000 parse/mrc-read-copro)
-(define-opcode mrc2    #b000 parse/mrc-read-copro2)
+  ;; ldr r0 start (pc rel label)
+  ((opcode? (? condition? #b1110) register? symbol-not-register?)
+   (lambda (t o c rd label . instr)
+     (let* ((rn     (register? 'pc))
+            (offset (emit-relocation t label instr))
+            (u?     (<= 0 offset)))
+       (encode/load-store-immediate-offset t c #t u? b? #f l? rd rn offset))))
+
+  ;; ldr r0 (++ r1) [+-#imm][rn][rn rrx][rn lsl imm][rn lsl rs]
+  ((opcode? (? condition? #b1110) register? target? (? shifter? '(imm 0)))
+   (lambda (t o c rd target shifter)
+     (let ((p? (target-p? target))
+           (w? (target-w? target)))
+       (case (shifter-mode shifter)
+         ((imm)     (encode/load-store-immediate-offset t c p? #t b? w? l? rd (target-rn target) (shifter-imm shifter)))
+         ((-imm)    (encode/load-store-immediate-offset t c p? #f b? w? l? rd (target-rn target) (shifter-imm shifter)))
+         ((reg+imm) (encode/load-store-register-offset t c p? #t b? w? l? rd (target-rn target) (shifter-rn shifter) (shifter-shtyp shifter) (shifter-shoff shifter)))
+         ((reg-imm) (encode/load-store-register-offset t c p? #f b? w? l? rd (target-rn target) (shifter-rn shifter) (shifter-shtyp shifter) (shifter-shoff shifter)))
+         ((reg+reg) (encode/load-store-register-offset t c p? #t b? w? l? rd (target-rn target) (shifter-rn shifter) (shifter-shtyp shifter) (shifter-rs shifter)))
+         ((reg-reg) (encode/load-store-register-offset t c p? #f b? w? l? rd (target-rn target) (shifter-rn shifter) (shifter-shtyp shifter) (shifter-rs shifter))))))))
+
+;; ---
+
+(define-instruction
+  ((ldrt  #b000 (l? #t) (b? #f))
+   (ldrbt #b000 (l? #t) (b? #t))
+   (strt  #b000 (l? #f) (b? #f))
+   (strbt #b000 (l? #f) (b? #t)))
+  
+  ((opcode? (? condition? #b1110) register? register? (? shifter? '(imm 0)))
+   (lambda (t o c rd target shifter . instr)
+     (case (shifter-mode shifter)
+       ((imm)     (encode/load-store-immediate-offset t c #f #t b? #t l? rd (target-rn target) (shifter-imm shifter)))
+       ((-imm)    (encode/load-store-immediate-offset t c #f #f b? #t l? rd (target-rn target) (shifter-imm shifter)))
+       ((reg+imm) (encode/load-store-register-offset t c #f #t b? #t l? rd (target-rn target) (shifter-rn shifter) (shifter-shtyp shifter) (shifter-shoff shifter)))
+       ((reg-imm) (encode/load-store-register-offset t c #f #f b? #t l? rd (target-rn target) (shifter-rn shifter) (shifter-shtyp shifter) (shifter-shoff shifter)))
+       ((reg+reg) (encode/load-store-register-offset t c #f #t b? #t l? rd (target-rn target) (shifter-rn shifter) (shifter-shtyp shifter) (shifter-rs shifter)))
+       ((reg-reg) (encode/load-store-register-offset t c #f #f b? #t l? rd (target-rn target) (shifter-rn shifter) (shifter-shtyp shifter) (shifter-rs shifter)))))))
+            
+;; ---
+
+(define-instruction
+  ((swp  #b000 (b? #f))
+   (swbp #b000 (b? #t)))
+
+  ((opcode? (? condition? #b1110) register? register? register?)
+   (lambda (t o c rd rm rn)
+     (encode/swap t c b? rd rn rm))))
+
+;; ---
+
+(define-instruction
+  ((bkpt #b000))
+
+  ((opcode? u-hword)
+   (lambda (t o imm)
+     (encode/software-breakpoint t #b1110 imm))))
+
+(define-instruction
+  ((swi #b000)
+   (svc #b000))
+
+  ((opcode? (? condition? #b1110) imm24?)
+   (lambda (t o c imm)
+     (encode/software-interrupt t c imm))))
+
+;; ---
+
+(define-instruction
+  ((cdp #b000))
+
+  ((opcode? (? condition? #b1110) copro? imm4? copro-register? copro-register? copro-register? (? imm3? #b000))
+   (lambda (t o c cpnum op1 crd crn crm op2)
+     (encode/copro-data-processing t c op1 crn crd cpnum op2 crm))))
+
+(define-instruction
+  ((cdp2 #b000))
+
+  ((opcode? copro? imm4? copro-register? copro-register? copro-register? (? imm3? #b000))
+   (lambda (t o cpnum op1 crd crn crm op2)
+     (encode/copro-data-processing t #b1111 op1 crn crd cpnum op2 crm))))
+
+(define-instruction
+  ((mrc #b000))
+
+  ((opcode? (? condition? #b1110) copro? imm4? register? copro-register? copro-register? (? imm3? #b000))
+   (lambda (t o c cpnum op1 rt crn crm op2)
+     (encode/copro-register-transfer t c op1 #t crn rt cpnum op2 crm))))
+
+(define-instruction
+  ((mrc2 #b000))
+
+  ((opcode? copro? imm4? register? copro-register? copro-register? (? imm3? #b000))
+   (lambda (t o cpnum op1 rt crn crm op2)
+     (encode/copro-register-transfer t #b1111 op1 #t crn rt cpnum op2 crm))))
+
+(define-instruction
+  ((mcr #b000))
+
+  ((opcode? (? condition? #b1110) copro? imm4? register? copro-register? copro-register? (? imm3? #b000))
+   (lambda (t o c cpnum op1 rt crn crm op2)
+     (encode/copro-register-transfer t c op1 #f crn rt cpnum op2 crm))))
+
+(define-instruction
+  ((mcr2 #b000))
+
+  ((opcode? copro? imm4? register? copro-register? copro-register? (? imm3? #b000))
+   (lambda (t o cpnum op1 rt crn crm op2)
+     (encode/copro-register-transfer t #b1111 op1 #f crn rt cpnum op2 crm))))
 
 ;; (define-opcode adr     #b00000     adr-emit) ;; special mnemonics for add/sub + pc-rel
 ;; (define-opcode adrs    #b00001     adr-emit)
@@ -331,7 +365,7 @@
 ;; (define-opcode cdp     'not-implemented) ;; todo: coprocessors
 ;; (define-opcode cdp2    'not-implemented)
 
-;; (define-opcode clrex   #b11110101011111111111000000011111 direct-emit)
+;; (define-opcode clrex   #b11110101011111111111000000011111 diect-emit)
 
 
 ;; (define-opcode cps     'not-implemented) ;; todo: change processor state (system)
