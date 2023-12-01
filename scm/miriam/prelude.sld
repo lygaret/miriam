@@ -8,6 +8,9 @@
           negative-integer?
           integer-within?
 
+          ->bin
+          ->hex
+
           let/cc
           if/let
           when/let)
@@ -17,6 +20,9 @@
   (import (scheme case-lambda))
 
   (begin
+    (define (->hex n) (number->string n 16))
+    (define (->bin n) (number->string n 2))
+
     (define (full? x)
       (not (null? x)))
 
