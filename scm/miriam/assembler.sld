@@ -3,7 +3,8 @@
   (import
    (scheme base)
    (scheme cxr)
-  
+   (ice-9 match)
+
    (miriam prelude)
    (miriam logger)
 
@@ -19,7 +20,7 @@
    (srfi 69)) ; hash tablse
 
   (export assemble)
-          
+
   ;; loop over forms
   ;;   each form, execute the parser
   ;;   each form writes to the output buffer
@@ -67,7 +68,7 @@
         (begin
           (emit-align out align))
         (emit-error out (list "couldn't parse alignment" form))))
-        
+
     (define (assemble-label out form)
       (if/let ((label (symbol-not-register? (cadr form))))
         (begin
@@ -76,16 +77,25 @@
             (assemble-forms out (cddr form))))
         (emit-error "invalid label:" (cadr form))))
 
+    (define (assemble-block out form)
+      (match-let (((name args . rest) (cdr form)))
+        (emit-push-scope out)
+        (emit-label out '$enter)
+        (assemble-forms out rest)
+        (emit-label out '$exit)
+        (emit-pop-scope out)))
+
     (define (assemble-form out code)
       (if (opcode? (car code))
           (assemble-instruction out code)
           (case (car code)
             ((label)  (assemble-label out code))
+            ((block)  (assemble-block out code))
             ((res)    (assemble-reserve out code))
             ((align)  (assemble-align out code))
             (else
              (emit-error out (list "unexpected form" code))))))
-      
+
     (define (assemble-forms out forms)
       (do ((next forms (cdr next)))
           ((null? next))
@@ -102,25 +112,20 @@
 
     ;; --
 
-    (define (fixup-reloc-patches out bytes addr patches)
-      (let iter ((patches patches))
-        (unless (null? patches)
-          (let ((form          (caar patches))
-                (offset        (cdar patches))
-                (saved-fillptr (asm-fillptr out)))
-            (set-asm-fillptr! out offset)
-            (let ((patch (assemble-opcode out form)))
-              (bytevector-copy! bytes offset patch 0 4)
-              (set-asm-fillptr! out saved-fillptr))
-
-            (iter (cdr patches))))))
+    (define (fixup-reloc-patch out bytes addr form scopes)
+      (call-in-scope
+       out addr scopes
+       (lambda ()
+         (let ((patch (assemble-opcode out form)))
+           (bytevector-copy! bytes addr patch 0 4)))))
 
     (define (fixup-relocs out bytes)
-      (let iter ((rest (hash-table->alist (asm-relocs out))))
-        (unless (null? rest)
-          (let ((name    (caar rest))
-                (patches (cdar rest)))
-            (if/let ((offset (lookup-label out name)))
-              (fixup-reloc-patches out bytes offset patches)
-              (emit-error out (list "undefined label:" name)))
-            (iter (cdr rest))))))))
+      (do ((next (asm-relocs out) (cdr next)))
+          ((null? next))
+        (let ((label  (caar next))
+              (form   (cadar next))
+              (offset (caddar next))
+              (scopes (car (cdddar next))))
+          (if/let ((label-offset (lookup-label out label scopes)))
+            (fixup-reloc-patch out bytes offset form scopes)
+            (emit-error out (list "undefined label:" label))))))))

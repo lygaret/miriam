@@ -59,10 +59,9 @@
        ((reg-imm) (encode/data-processing-immediate-shift t c o s rd rn (shifter-rn op) (shifter-shtyp op) (shifter-shoff op)))
        ((reg+reg) (encode/data-processing-register-shift  t c o s rd rn (shifter-rn op) (shifter-shtyp op) (shifter-rs op)))))))
 
-  
-
 (define-instruction
-  ((adr #b0000))
+  ((adr  #b0000 (s 0))
+   (adrs #b0000 (s 1)))
 
   ((opcode? (? condition? #b1110) register? symbol-not-register?)
    (lambda (t o c rd label . instr)
@@ -71,10 +70,8 @@
             (pcrel    (- offset 8))
             (imm12    (imm12? (abs pcrel)))
             (opcode   (if (<= 0 pcrel) (opcode? 'add) (opcode? 'sub))))
-       (log "adr instruction:" (asm-fillptr t) offset pcrel opcode imm12)
-
        (if/let ((imm (imm12? (abs pcrel))))
-         (encode/data-processing-immediate t c opcode 0 rd pc imm12)
+         (encode/data-processing-immediate t c opcode s rd pc imm12)
          (emit-error t "label doesn't fit in adr" instr))))))
        
 ;; ---
@@ -354,21 +351,13 @@
    (lambda (t o cpnum op1 rt crn crm op2)
      (encode/copro-register-transfer t #b1111 op1 #f crn rt cpnum op2 crm))))
 
-;; (define-opcode adr     #b00000     adr-emit) ;; special mnemonics for add/sub + pc-rel
-;; (define-opcode adrs    #b00001     adr-emit)
-;; (define-opcode b       #b1010      b-emit)
 ;; (define-opcode bfc     #b0111110   bfc-emit)
 ;; (define-opcode bfi     #b0111110   bfi-emit)
-;; (define-opcode bkpt    #b00010010  bkpt-emit)
-;; (define-opcode bl      #b1011      b-emit)
-
-;; (define-opcode cdp     'not-implemented) ;; todo: coprocessors
-;; (define-opcode cdp2    'not-implemented)
 
 ;; (define-opcode clrex   #b11110101011111111111000000011111 diect-emit)
 
 
-;; (define-opcode cps     'not-implemented) ;; todo: change processor state (system)
+;; (define-opcode cps     'not-implemented) ;; system
 ;; (define-opcode cpy     'not-implemented) ;; no support for deprecated synonyms
 
 ;; (define-opcode csdb    #b11100011001000001111000000010100 direct-emit)

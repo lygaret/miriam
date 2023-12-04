@@ -18,5 +18,10 @@
     (define (aplist-push obj item)
       (and (aplist? obj) (set-cdr! obj (cons item (cdr obj)))))
 
+    (define (aplist-pop obj)
+      (and (aplist? obj)
+           (let ((item (cadr obj)))
+             (set-cdr! obj (cddr obj)))))
+
     (define (aplist-list obj)
       (and (aplist? obj) (cdr obj)))))

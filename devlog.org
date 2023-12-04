@@ -40,6 +40,14 @@ I'm working on a from-scratch scheme operating system.
 
 * latest how to:
 
+** <2023-12-04 Mon>
+
+#+begin_src
+$ guile --r7rs -L ./scm ./tests/assembler-tests.scm
+#+end_src
+
+** <2023-11-24>
+
 #+begin_src
 $ guile --r7rs -L ./scm --fresh-auto-compile
 > ,m (miriam assembler opcodes)
@@ -47,6 +55,43 @@ $ guile --r7rs -L ./scm --fresh-auto-compile
 #+end_src
 
 * devlog
+
+** <2023-12-04 Mon>
+*** scoped labels 
+
+- ~scopes~ is a stack of symbols
+  - '() means the top-level
+  - the car of the stack is the current scope
+
+- ~labels~ is an alist of alists
+  - ~((label . ((scope-sym . offset) (scope-sym . offset))))~
+
+- ~push-label~
+  - adds a label at the current offset to the current scope
+
+- ~push-reloc~
+  - adds a relocation entry, which includes the _current stack of scopes_
+
+- ~fixup-reloc~
+  iterates through the saved stack of scopes, looking for a label that matches
+  both the scope and symbol name.
+
+  since top-level labels are stored with the empty scope as a key, they're
+  naturally included in the search
+
+**** example
+
+#+begin_src scheme
+  (label foo)
+  (some-instruction)
+  (block name ()
+    (some-instruction)
+    (bl ?q $exit)
+    (some-instruction)
+    (bl ?q $enter))
+  (some-instruction)
+  (bl foo)
+#+end_src
 
 ** <2023-11-30 Thu> 
 
@@ -70,7 +115,7 @@ At the high level, there's the assembler syntax itself:
    ;; $start is a virtual label for just after  the block prologue (flags) (for tail-cails)
    ;; $end   is a virtual label for just before the block epilogue (flags) (for early exit)
    ;; $exit  is a virtual label for just after  the block epilogue (flags) (for data offsets, maybe)
-   (block name (calling-convention)
+   (block name ()
      (mov r1 (r2 lsl 2))
      (adcs r1 r3 r2))
 
@@ -138,3 +183,14 @@ At the high level, there's the assembler syntax itself:
     (instr   (res "I just want this thiiiing to woooork!"))
     (outstr  (res (bytes 128))))
 #+end_src
+
+* scratch
+
+- what's in the compile time environment
+
+  - opcodes
+    - this is a function that takes the arguments and emits to the output object
+  - psuedo-ops
+    - this is a function that takes the arguments and emits opcodes, which are then compiled
+  - definitions
+    - this is a function that 
