@@ -158,8 +158,10 @@
              (rem     (modulo fillptr alignment)))
         (cond
          ((zero?     rem) fillptr)
-         ((positive? rem) (bump-fillptr out (- alignment rem)))
-         ((negative? rem) (emit-error out "alignment is negative")))))
+         ((negative? rem) (emit-error out "alignment is negative"))
+         ((positive? rem)
+          (let ((space (make-bytevector (- alignment rem) 0)))
+            (emit-bytevector out space))))))
 
     (define (emit-relocation out label form)
       (if/let ((offset (lookup-label out label (asm-scopes out))))

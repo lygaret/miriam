@@ -2,6 +2,7 @@
 
   (import
    (scheme base)
+   (scheme eval)
    (scheme cxr)
    (ice-9 match)
 
@@ -23,12 +24,61 @@
 
   (begin
 
+    (define (unquoted? form)
+      (and (pair? form) (eqv? 'unquote (car form))))
+
+    (define eval-environment
+      (environment '(scheme base) '(miriam assembler numbers) '(miriam assembler eval)))
+
+    (define (eval-quote out form)
+      (let ((code `(let (($ ,(asm-fillptr out))) ,@form)))
+        (log "eval-quote" code)
+        (let ((res (eval code eval-environment)))
+          (log "eval-quote-out:" res)
+          res)))
+
+    (define (expand-form out form)
+      (if (null? form)
+          '()
+          (let iter ((next form) (accum '()))
+            (log "expand-form iter:" next)
+            (cond
+             ((null? next)
+              (if (null? (cdr accum))
+                  (car accum)
+                  (reverse accum)))
+             ((unquoted? (car next)) (iter (cdr next) (cons (eval-quote out (cdar next)) accum)))
+             (else                   (iter (cdr next) (cons (car next) accum)))))))
+
+    (define *pseudos* '())
+
+    (define (assemble-define out form)
+      (eval form eval-environment))
+
+    (define (assemble-define-pseudo out form)
+      (let* ((name (caadr form))
+             (args (cdadr form))
+             (body  `(lambda ,args ,@(cddr form)))
+             (macro (eval body eval-environment)))
+        (set! *pseudos* (cons (cons name macro) *pseudos*))))
+
+    (define (assemble-pseudo out form)
+      (if/let ((entry (assoc (car form) *pseudos*)))
+              (let* ((args  (expand-form out (cdr form)))
+                     (insts (apply (cdr entry) args)))
+                (if (list? (car insts))
+                    (assemble-forms out insts)
+                    (assemble-form out insts)))
+              #f))
+
     ;; instruction = (a form with an opcode for a car)
     ;; evaluates the given opcode, and emits it's bytes to the code stream
     (define (assemble-instruction out form)
-      (if/let ((code (eval-opcode out form)))
-        (emit-bytevector out code)
-        (emit-error out (list "problem assembling" form))))
+      (let ((expanded (expand-form out form)))
+        (log "assemble instruction expanded" expanded)
+        (if/let ((code (eval-opcode out expanded)))
+                (emit-bytevector out code)
+                (emit-error out (list "problem assembling" form)))))
 
     ;; associates the given name at the current offset (and scope)
     (define (assemble-label out form)
@@ -56,7 +106,8 @@
              (and u/s-hword  (lambda (t value) (integer->bytevector value 2)))
              (and u/s-word   (lambda (t value) (integer->bytevector value 4)))
              (and u/s-dword  (lambda (t value) (integer->bytevector value 8)))
-             (and string?    (lambda (t value) (string->utf8 value))))))
+             (and string?    (lambda (t value) (string->utf8 value)))
+             (and unquoted?  (lambda (t value . form) (expand-form out form))))))
 
       (if/let ((value (reserve-matcher '() (cdr form))))
         (emit-bytevector out value)
@@ -85,12 +136,15 @@
       (if (opcode? (car code))
           (assemble-instruction out code)
           (case (car code)
+            ((define) (assemble-define out code))
+            ((pseudo) (assemble-define-pseudo out code))
             ((label)  (assemble-label out code))
             ((block)  (assemble-block out code))
             ((resv)   (assemble-reserve out code))
             ((align)  (assemble-align out code))
             (else
-             (emit-error out (list "unexpected form" code))))))
+             (when (not (assemble-pseudo out code))
+               (emit-error out (list "unexpected form" code)))))))
 
     ;; iterate over forms
     (define (assemble-forms out forms)

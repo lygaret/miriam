@@ -35,6 +35,7 @@
   (import (scheme cxr))
   (import (scheme write))
 
+  (import (miriam logger))
   (import (miriam prelude))
   (import (miriam assembler numbers))
 
@@ -329,6 +330,7 @@
       (integer-within? 0 x 31))
 
     (define (imm16? x)
+      (log "imm16? " x (u-hword x))
       (u-hword x))
 
     (define (imm24? x)

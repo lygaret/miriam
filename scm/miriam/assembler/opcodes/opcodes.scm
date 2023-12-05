@@ -111,7 +111,8 @@
        ((reg+reg) (encode/data-processing-register-shift  t c o s rd 0 (shifter-rn op) (shifter-shtyp op) (shifter-rs op)))))))
 
 (define-instruction
-  ((movw #b1000))
+  ((movw #b1000)
+   (movt #b1010))
 
   ((opcode? (? condition? #b1110) register? imm16?)
    (lambda (t o c rd imm)
