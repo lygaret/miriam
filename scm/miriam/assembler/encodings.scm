@@ -108,7 +108,7 @@
     (set! out (b+  out              c))
     (set! out (b+ (b<< out 3)   #b101))
     (set! out (b+ (b<< out 1)      l?))
-    (set! out (b+ (b<< out 24) (b& #x00FFFFFF imm)))
+    (set! out (b+ (b<< out 24) (b& imm #x00FFFFFF)))
     (integer->bytevector out 4)))
 
 (define (encode/branch-link-exchange t c rm)

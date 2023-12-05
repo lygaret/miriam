@@ -144,7 +144,7 @@
    (bl #b1010 (l? #t)))
 
   ;; b ?c +- 
-  ((opcode? (? condition? #b1110) imm24-wordaligned?)
+  ((opcode? (? condition? #b1110) simm24?)
    (lambda (t o c imm)
      (let ((adjusted (adjust/pcrel imm)))
        (encode/branch-with-link t c (flag? l?) adjusted))))
@@ -158,11 +158,12 @@
   ((opcode? (? condition? #b1110) symbol-not-register?)
    (lambda (t o c label . instr)
      (let* ((offset   (emit-relocation t label instr))
-            (offset   (imm24-wordaligned? offset))
+            (offset   (simm24? offset))
             (adjusted (and offset (adjust/pcrel offset))))
+       (log "branch to " label adjusted)
        (if adjusted
            (encode/branch-with-link t c (flag? l?) adjusted)
-           (emit-error t "label is too far away, or not word aligned" label offset))))))
+           (emit-error t "label is too far away, or not word aligned" label))))))
 
 (define-instruction
   ((bx #b1011))
@@ -246,8 +247,10 @@
    (lambda (t o c rd label . instr)
      (let* ((rn     (register? 'pc))
             (offset (emit-relocation t label instr))
-            (u?     (<= 0 offset)))
-       (encode/load-store-immediate-offset t c #t u? b? #f l? rd rn offset))))
+            (pcrel  (- offset 8))
+            (u?     (<= 0 pcrel))
+            (pcrel  (abs pcrel)))
+       (encode/load-store-immediate-offset t c #t u? b? #f l? rd rn pcrel))))
 
   ;; ldr r0 (++ r1) [+-#imm][rn][rn rrx][rn lsl imm][rn lsl rs]
   ((opcode? (? condition? #b1110) register? target? (? shifter? '(imm 0)))

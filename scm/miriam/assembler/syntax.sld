@@ -28,8 +28,7 @@
           shifter-rs     
           shifter-imm    
           barrier-option?
-          imm3? imm4? imm5? imm16?
-          imm24? imm24-wordaligned?
+          imm3? imm4? imm5? imm16? imm24? simm24?
           imm12? -imm12? u/s-imm12?)
 
   (import (scheme base))

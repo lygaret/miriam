@@ -290,8 +290,8 @@
 (define (imm24? x)
   (integer-within? 0 x #x00FFFFFF))
 
-(define (imm24-wordaligned? x)
-  (and (s-word x) (zero? (b& x #b11)) x))
+(define (simm24? x)
+  (integer-within? (- 33554432) x 33554428))
 
 ;; imm12 is an 8-bit immediate, rotated up to 15 positions
 ;; not all values can be expressed this way
