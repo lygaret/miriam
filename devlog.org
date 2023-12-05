@@ -42,8 +42,21 @@ I'm working on a from-scratch scheme operating system.
 
 ** <2023-12-04 Mon>
 
+this builds a raw binary output file, which can be run in qemu!
+
 #+begin_src
 $ guile --r7rs -L ./scm ./tests/assembler-tests.scm
+$ qemu-system-arm -machine raspi2b -device loader,file=a.bin,addr=0x20 -Ss
+#+end_src
+
+in another terminal
+
+#+begin_src
+$ arm-none-eabi-gdb
+> layout asm
+> layout reg
+> target remote localhost:1234
+> si ; to single step (code starts at 0x20)
 #+end_src
 
 ** <2023-11-24>
@@ -55,6 +68,39 @@ $ guile --r7rs -L ./scm --fresh-auto-compile
 #+end_src
 
 * devlog
+** <2023-12-05 Tue>
+
+~(define)~ and ~(pseudo)~ seem like they're working!
+
+Also, I read an interesting blog post positing an arm emulator as a unit testing framework; basically:
+
+#+begin_src
+(block some-function (:callconv)
+  (do
+    (some)
+    (stuff)))
+
+(test
+  ;; memory pseudo signals the emulator to place the values in memory
+  (memory #x1200 (word #x22334455))
+
+  ;; non-test are executed
+  (bl some-function)
+
+  ;; assert pseudo signals to do the tests on the emulated cpu
+  (assert (reg-eq? pc lr))
+  (assert (memory-eq? #x4032 #\h)))
+#+end_src
+
+The `test` blocks are normally ignored by the assembler, but when running in "test" mode,
+insert breakpoint calls, and then assert the state of an emulated cpu + memory.
+
+Interesting idea, and it would only require a somewhat minimal cpu emulation, because we don't
+need all the various devices, only the cpu and the ability to control the visible memory.
+
+See:
+https://mos.datatra.sh/guide/unit-testing.html
+
 ** <2023-12-04 Mon>
 well, this is cool!!
 
