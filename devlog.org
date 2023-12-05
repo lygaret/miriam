@@ -55,6 +55,20 @@ $ guile --r7rs -L ./scm --fresh-auto-compile
 #+end_src
 
 * devlog
+** <2023-12-04 Mon>
+well, this is cool!!
+
+- run assembler test, it outputs a binary file
+- at byte 512 is #xAA55, which is signal that this is a boot sector
+
+- qemu-system-arm -machine raspi1b -kernel a.out -s -S
+- eabi-arm-none-gdb
+  - target remote localhost:1234
+  - layout asm
+  - si
+
+it booted!
+kinda!
 
 ** <2023-12-04 Mon>
 *** scoped labels 
