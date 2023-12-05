@@ -21,8 +21,8 @@
   (import (srfi 69)) ; hash-tables
   (import (srfi 60)) ; integers-as-bits
 
-  (include "encodings.scm")
-  (include "opcodes.scm")
+  (include "opcodes/encodings.scm")
+  (include "opcodes/opcodes.scm")
 
   (begin
     (define-syntax debug-emit
