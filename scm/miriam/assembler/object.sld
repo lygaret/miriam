@@ -87,7 +87,7 @@
 
         (let ((scoped-entry (assoc (peek-scope out) (cdr entry))))
           (when scoped-entry
-            (error "label already exists in this scope!" scoped-entry))
+            (error "label already exists in this scope!" (list label scoped-entry)))
 
           (set! scoped-entry (cons (peek-scope out) offset))
           (set-cdr! entry (cons scoped-entry (cdr entry))))))

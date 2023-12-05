@@ -39,6 +39,7 @@
     ;; assembles the body code inside a new scope, allowing arbitrary labels
     (define (assemble-block out form)
       (match-let (((name args . rest) (cdr form)))
+        (emit-label out name)
         (emit-push-scope out)
         (emit-label out '$enter)
         (assemble-forms out rest)
@@ -86,7 +87,7 @@
           (case (car code)
             ((label)  (assemble-label out code))
             ((block)  (assemble-block out code))
-            ((res)    (assemble-reserve out code))
+            ((resv)   (assemble-reserve out code))
             ((align)  (assemble-align out code))
             (else
              (emit-error out (list "unexpected form" code))))))
