@@ -182,15 +182,12 @@
           ((null? next))
         (assemble-form ctx (car next))))
 
-    ;; don't require quoting the code
-    (define-syntax assemble
-      (syntax-rules ()
-        ((_ body ...)
-         (let ((ctx (make-asm-context)))
-           (assemble-forms ctx '(body ...))
-           (let ((output (buffer-bytevector (asm-code (ctx-out ctx)))))
-             (fixup-relocs ctx output)
-             (cons output ctx))))))
+    (define (assemble code)
+      (let ((ctx (make-asm-context)))
+        (assemble-forms ctx code)
+        (let ((output (buffer-bytevector (asm-code (ctx-out ctx)))))
+          (fixup-relocs ctx output)
+          (cons output (ctx-out ctx)))))
 
     ;; iterate through each reloc and reassemble the form, so that the labels can resolve
     (define (fixup-relocs ctx bytes)

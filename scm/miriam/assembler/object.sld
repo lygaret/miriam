@@ -142,7 +142,6 @@
     (define emit-pop-scope pop-scope)
 
     (define (emit-error out . err)
-      (display (list "emit-error: " err))(newline)
       (aplist-push (asm-errors out) err)
       #f) ; return false so it can be used in bool chains
 
