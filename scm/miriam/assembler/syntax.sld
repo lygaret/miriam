@@ -28,6 +28,8 @@
           shifter-rs     
           shifter-imm    
           barrier-option?
+          unquote?
+          unquote-splice?
           imm3? imm4? imm5? imm16? imm24? simm24?
           imm12? -imm12? u/s-imm12?)
 
@@ -319,6 +321,9 @@
 
     ;; -----
     ;; immediate helpers
+
+    (define (unquote? form)        (simple-pair? form 'unquote))
+    (define (unquote-splice? form) (simple-pair? form 'unquote-splice))
 
     (define (imm3? x)
       (integer-within? 0 x 7))

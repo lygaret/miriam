@@ -1,6 +1,8 @@
 (define-library (miriam prelude)
 
   (export ->>
+          ensure-list
+          unwrap-singleton
           simple-pair?
           singleton-pair?
           full?
@@ -26,6 +28,9 @@
     (define (full? x)
       (not (null? x)))
 
+    (define (ensure-list x)
+      (if (list? x) x (list x)))
+
     (define simple-pair?
       (case-lambda
         ((x)     (and (pair? x) (full? (cdr x)) (null? (cddr x))))
@@ -36,6 +41,9 @@
 
     (define (singleton-pair? x)
       (and (pair? x) (null? (cdr x)) x))
+
+    (define (unwrap-singleton x)
+      (if (singleton-pair? x) (car x) x))
 
     (define (positive-integer? x)
       (and (integer? x) (positive? x) x))
