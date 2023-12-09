@@ -2,73 +2,217 @@
 #+AUTHOR:  Jon Raphaelson
 #+EMAIL:   jon@accidental.cc
 
-I'm working on a from-scratch scheme operating system.
+* <2023-12-09 Sat> data representation
 
-* general plan
+a _value_ is a (little-endian) 32-bit word
+a _value_ can be either an _immediate_ or an _object_
 
-- an ARMv7 assembler (r7rs, run on host)
+an _object_    is a pointer to an objects header word
+an _immediate_ is any 32-bit word that is non-zero in the low two bits
 
-- a pre-scheme compiler (r7rs, runs on host)
-  - compiled to native ARMv7 code (through assembler)
-  - dialect of scheme, no gc (manual memory)
-    - probably still has call/cc, since we're compiling to cps anyway
+ergo, "unaligned pointers" represent immediates
 
-- a bytecode vm and garbage collector, written in our pre-scheme
-  - which can be booted on an rpi (rg55xx?)
-  - multiprocessor?
-    - the vm should be able to run independently on all cores
-    - study BEAM
+constraints:
+-- we can only mask-test 8-bits at a time with arm instructions
 
-- a compiler for scheme to our bytecode vm
-  - "scheme" - this doesn't actually have to be a scheme
-  - if it's not 100%, it means writing a bunch of library code
-    - but rewriting srfis is probably good for my personal growth
+** immediates
 
-- a rewrite of the assembler and pre-scheme compiler to run on the bytecode compiler
+#+begin_src 
+(little endian, low byte is first)
+76543210 FEDCBA98 76543210 FEDCBA98
 
-- an os written in the dialect
-  - continuations as callbacks
-  - system level gc? system-wide s-expr based data types?
-
-- a graphical shell for the os
-  - simple tiled, but processes should get regions to draw
-
-- a text adventure game (zork)
-- a pong game
-- a tetris game
-- a web browser? gopher maybe?
-
-* latest how to:
-
-** <2023-12-04 Mon>
-
-this builds a raw binary output file, which can be run in qemu!
-
-#+begin_src
-$ guile --r7rs -L ./scm ./tests/assembler-tests.scm
-$ qemu-system-arm -machine raspi2b -device loader,file=a.bin,addr=0x20 -Ss
+type     data
+xxxx0001 xxxxxxxx xxxxxxxx xxxxxxxx <- fixnum (28bit signed int)
+xxxx0010 xxxxxxxx xxxxxxxx xxxxxxxx <- utf-8 codepoint (weird encoding, but single-byte encoding is simple still)
+xxxx0011 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx0101 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx0110 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx0111 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx1001 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx1010 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx1011 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx1101 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx1110 xxxxxxxx xxxxxxxx xxxxxxxx <- nil
+xxxx1111 xxxxxxxx xxxxxxxx xxxxxxxx <- undefined
 #+end_src
 
-in another terminal
+** objects
+*** object header
 
-#+begin_src
-$ arm-none-eabi-gdb
-> layout asm
-> layout reg
-> target remote localhost:1234
-> si ; to single step (code starts at 0x20)
+#+begin_src 
+gc info  type     size
+76543210 FEDCBA98 76543210 FEDCBA98
+
+ggggtttt ssssssss ssssssss ssssssss
+
+g7 = forwarded?
+g6 = special? (skipped by gc)
+g5 = align?   (align based on size)
+g3 = 
+
+t  = type
+s  = size (in words if align?)
 #+end_src
 
-** <2023-11-24>
+* <2023-12-08 Fri>
+** interesting instructions
+
+_turns out these are thumb only_
+
+some instructions not to forget about:
+- cbnz, cbz
+  - compare and branch on nonzero/zero
+  - ~cbz rn, label~ == ~cmp rn, 0; b ?eq label~
+  - ~cbnz rn, label~ == ~cmp rn, 0; b ?ne label~
+- tbb, tbh
+  - test and branch byte/half-word
+  - causes a PC-relative forward branch from a table of single-byte or half-word offsets
+
+* <2023-12-07 Thu>
+
+general outline of the runtime system, based on a bunch of reading that I've been doing:
+
+- cps conversion + cheney/mta style garbage collection
+- the stack is the nursery of the garbage collectior 
+- "heap allocation" is pushing to the stack
+- when the stack hits the end of it's page, minor GC
+    - this will scan the stack page, copy out objects to the old-space
+    - then trash the stack page and teturn a new one, with 
+- heap allocation is simply pushing to the stack
+- limit the stack size to a page
+    - when a requested allocation hits the page boundary, minor GC
+    - this will scan the _stack page_, copy out objects to some other pages, and then reset the stack pointer
+    - with CPS this is straightforwardish
+
+immutable first, like clojure
+- it makes reasoning about things easier
+- see [[https://web.archive.org/web/20200109080303/http://home.pipeline.com/~hbaker1/ObjectIdentity.html][this good paper on object identity]], which makes good cases for "everything is an immutable value,
+  including the reference to a mutable box".
+
+*** reading list
+
+- [[https://web.archive.org/web/20191008050811/http://home.pipeline.com/~hbaker1/YoungGen.html][h. baker: 'infant mortality' and generational garbage collection]]
+- [[https://web.archive.org/web/20191008012410/http://home.pipeline.com/~hbaker1/LazyAlloc.html][h. baker: cons should not cons it's arguments; lazy alloc]]
+- [[https://web.archive.org/web/20200223051632/http://home.pipeline.com/~hbaker1/CheneyMTA.html][h. baker: cons should not cons it's arguments pt 2; cheny on the mta]]
+- [[https://www.more-magic.net/posts/internals-gc.html][chicken internals: the garbage collector]]
+- [[https://www.more-magic.net/posts/internals-data-representation.html][chicken internals: object representation]]
+  - [[https://www.multicians.org/lcp.html][maclisp -- the basic hackery]] (bibop collection, 100% different than chicken, referenced)
+- [[https://www.cs.princeton.edu/~appel/papers/142.pdf][a. appel: runtime tags aren't necessary]]
+
+these are brilliant papers on utilizing the stack for the nursery of a generational garbage collector
+the chicken paper in particular, since I'm much better at reading code examples
+
+h. baker's papers are really really good you guys.
+
+* <2023-12-06 Wed>
+
+completely unrelated, it sucks that scheme doesn't have symbol macros.
+
+I think miriam should have a few CL and clojure features added; the language can drift some scheme, absolutely.
+
+- keywords! basically symbols, but can't be used in a calling position
+  - especially if we end up doing symbol macros for things like generalized ~set!~, we need a simpler type than a symbol
+    - a ~keyword~ is an interned string, which has pointer equality and is guaranteed to match
+    - a ~symbol~ is a record, comprised of a keyword and attribute slots for ~set!~, ~get!~, possibly a metatable, etc.
+- drop the syntactic tower and just use unhygenic macros
+- use ~0x~ rather than ~#x~ for number syntaxes
+  - that frees up the ~#~ for user-defined reader macros
+- reader macros, such that we can define arbitrary new ~#something()~ syntaxes
+  - ie. regex ~#/\d+/~, timestamps ~#t<1985-02-01T00:00:00.000000+06:00>~, xml ~#xml<foo><bar /></foo>~ etc.
+    - these should probably support unquote, ie. ~#xml<foo type=,attr>,(gen-content)</foo>~
+- some kind of generic method/multiple dispatch on user-provided predicates, rather than just ~case-lambda~
+  - this is basically clos, or the ~metatable~ stuff from lua, metaclasses in ruby, prototypes from javascript
+  - generalized ~set!~, with symbol macros allowing for deeply nested sets
+    - that lets us create arbitrary "setters" for meta-functions
+    - ie. ~(set! (set-handler 'accessor) set-accessor!)~, which might allow ~(set! (accessor x) value)~
+  - similarly, a generalized get! - ie. ~(get object key)~ - corresponds to lua ~index~ metamethod
+  - does this extend to ~make~, ie generalized constructors?
+  - generic ~read~, ~write~ and ~display~
+    - anything interesting to read here re: haskell optics, etc?
+    - can we specialize these at compile time?
+  - _method combiner_ in clos is cool:
+    - you can specify on a generic function that, rather than only calling the most specific, you can use a
+      different operator; ie. ~(defgeneric foo (obj) (:method-combination list))~ would run _all_ applicable
+      methods and bundle values into a list; imagine ~fold~, ~begin~ etc. as combination operators
+  - a lot of this is reminiscent of the ruby class hierarchy as well
+    - ~prepend~ ~append~ modules for overrides?
+- string interpolation (cheeky: ~"~ is a reader macro which compiles to a series of ~string:append~ calls)
+
+you could think of the dotted record syntax like an expansion of the ~get!~ macro:
 
 #+begin_src
-$ guile --r7rs -L ./scm --fresh-auto-compile
-> ,m (miriam assembler opcodes)
-> (debug-emit (ldr r0 (++ r1) #x58))
+  (list p.x p.y)   -> (list (get! p x) (get! p y)) -> (list (p-get-x p) (p-get-y p))
+  (set! p.x 42)    -> (set! (get! p x) 42)         -> (set! (p-get-x p) 42)
+  (p.something 50) -> ((get! p something) 50)      -> (p-something 50)
 #+end_src
 
-* devlog
-** <2023-12-05 Tue>
+part of the reason I keep reaching for relatively inefficient cons and alists is that ~(asm-context asm)~
+is almost as bad as (cadr asm) in terms of code-reading density; I'd much rather ~asm.context~.
+
+see [[https://lispcookbook.github.io/cl-cookbook/cl21.html#features][cl21 (unofficial proposal for cleanup of commonlisp)]]
+
+- ~^~ as a reader macro to give short lambdas
+  - ~(map ^(+ 1 %) some-list)~
+- some kind of automatic currying, possibly with a reader macro to defend against accidental calls
+  - this may be less frustrating with the above macro
+
+* <2023-12-06 Wed>
+
+cleaned up the assembler a good bit; mostly encapsulating the context that gets passed around the
+assembler functions; I may switch these all to take them implicitly, actually, since I moved
+~assemble~ into being a function, rather than syntax.
+
+additionally, started in on a really simple driver, pulling code from a file, rather than directly
+inline.
+
+** relocations
+
+as I'm starting to think about global variables, I'm reading about how ELF does relocation for ARM,
+and it's much more complicated than what I'm doing:
+
+- me:
+  - when a relocation is needed, store the _form_
+  - when a relocation is resolved, _reassemble the form_ at the point, and replace
+
+- elf:
+  - when a relocation is needed, record the exact form of relocation
+  - when relocation is resolved, the instruction at the offset is extracted, and reencoded by the instruction
+
+  - relocation types (skipping thumb)
+    - ~R_ARM_PC24~,    (b #imm24), pcrelative, "bits 0-23 signed offset in units of 4-byte words"
+    - ~R_ARM_PC13~ ,   (ldr r #imm13) "bits 0-11 unsigned offset, bit 13 encodes direction (0 = -, 1 = +)"
+    - ~R_ARM_ABS12~,   LDR/STR imm
+    - ~R_ARM_SWI24~,   (swi #imm24)
+    - explicitly sized, unencoded relocations
+      - ~R_ARM_ABS32~,   any 32-bit word, (probably data sections?)
+      - ~R_ARM_REL32~,   any 32-bit word
+      - ~R_ARM_ABS16~,   any 16-bit halfword (probably data sections?)
+      - ~R_ARM_ABS8~,    any 8-bit byte
+      - ~R_ARM_SBREL32~, any 32-bit word, relative to the section boundary
+
+pros of the elf way:
+- don't have to have the assembler present to relocate
+- relocations can work at program load time, rather than assembly time (dynamic loader)
+
+as such, I'm going to convert to this model; the instructions will encode relocations as tuples
+like ~(label fillptr (reloc-type args))~, and relocation time can use the reloc-type to do the
+actual in-place patching.
+
+** elf
+
+elf is pretty set on various posixy things, I don't need that, I can just marshal to external reps
+
+#+begin_src
+  (%compiled-module
+    (export . (exported exported2 exported3))
+    (import . ((module name defun) ...)
+    (code   . #vu8(0 0 0 ....)
+    (reloc  . ((label offset (reloc-type arg)) ...)
+#+end_src
+
+then "execution" is, like on linux, the composing of the modules into a memory space and jumping into it
+c v
+* <2023-12-05 Tue>
 
 ~(define)~ and ~(pseudo)~ seem like they're working!
 
@@ -101,7 +245,7 @@ need all the various devices, only the cpu and the ability to control the visibl
 See:
 https://mos.datatra.sh/guide/unit-testing.html
 
-** <2023-12-04 Mon>
+* <2023-12-04 Mon>
 well, this is cool!!
 
 - run assembler test, it outputs a binary file
@@ -116,8 +260,8 @@ well, this is cool!!
 it booted!
 kinda!
 
-** <2023-12-04 Mon>
-*** scoped labels 
+* <2023-12-04 Mon>
+** scoped labels 
 
 - ~scopes~ is a stack of symbols
   - '() means the top-level
@@ -139,7 +283,7 @@ kinda!
   since top-level labels are stored with the empty scope as a key, they're
   naturally included in the search
 
-**** example
+*** example
 
 #+begin_src scheme
   (label foo)
@@ -153,7 +297,7 @@ kinda!
   (bl foo)
 #+end_src
 
-** <2023-11-30 Thu> 
+* <2023-11-30 Thu> 
 
 At the high level, there's the assembler syntax itself:
 
@@ -243,14 +387,3 @@ At the high level, there's the assembler syntax itself:
     (instr   (res "I just want this thiiiing to woooork!"))
     (outstr  (res (bytes 128))))
 #+end_src
-
-* scratch
-
-- what's in the compile time environment
-
-  - opcodes
-    - this is a function that takes the arguments and emits to the output object
-  - psuedo-ops
-    - this is a function that takes the arguments and emits opcodes, which are then compiled
-  - definitions
-    - this is a function that 
