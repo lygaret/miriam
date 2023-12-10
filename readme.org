@@ -14,8 +14,9 @@ miriam is:
 
 ~miriam~ is in no way ready for others to play with, but [[./devlog.org]] will help get you up to speed.
 
-- [2023-12-08 Fri] the assembler is mostly working, and I'm working on value reprs
-- [2023-12-04 Mon] build a raw binary output file and run in qemu
+** [2023-12-10 Sun] the assemebler's macro system is nicely coming along
+** [2023-12-08 Fri] the assembler is mostly working, and I'm working on value reprs
+** [2023-12-04 Mon] build a raw binary output file and run in qemu
 
   #+begin_src
   $ guile --r7rs -L ./scm ./tests/assembler-tests.scm

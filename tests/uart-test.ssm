@@ -29,6 +29,13 @@
         (b $exit^)))
     ,@else))
 
+(pseudo (while test cond . then)
+  `(scope
+     ,test
+     (b ,(condition-invert cond) $exit)
+     ,@then
+     (b $enter)))
+
 (pseudo (when cond . then)
   `(scope
      (b ,(condition-invert cond) $exit)
@@ -40,17 +47,11 @@
      ,@then))
 
 (block main ()
-  (cmp r0 0)
-  (when ?eq
-    (mov r0 r1)
-    (mov r2 r3))
-  (unless ?lt
-    (mov r4 r5))
-  (if ?gt
-      ((mov r1 r5)
-       (mov r2 r6))
-      ((mov r8 r10)
-       (adr r4 main))))
+  (while (cmp r0 0) ?eq
+    (mov r1 r5)
+    (mov r2 r6)
+    (mov r8 r10)
+    (adr r4 main)))
 
 (align 510)
 (resv (byte #xAA))

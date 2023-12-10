@@ -2,6 +2,59 @@
 #+AUTHOR:  Jon Raphaelson
 #+EMAIL:   jon@accidental.cc
 
+* <2023-12-10 Sun> nicer pseudos
+
+with the ability to "descope" labels (refer to the same name at a higher scope
+explicitly), we're able to do some nifty ~pseudo~ macros without running into
+label naming conflicts.
+
+next is to really dig into the COMFY core stuff that sassy uses, which, _surprise_
+is based on an H. Baker paper: [[https://web.archive.org/web/20180208043127/http://home.pipeline.com/~hbaker1/sigplannotices/COMFY.TXT][a comfortable set of control primitives for asm programming]]
+
+#+begin_src scheme
+  (pseudo (delay reg count)
+    `((mov ,reg ,count)
+      (scope
+        (subs ,reg ,reg 1)
+        (b ?ne $enter))))
+
+  (pseudo (if cond then else)
+    `((scope
+        (scope
+          (b ,(condition-invert cond) $exit)
+          ,@then
+          (b $exit^)))
+      ,@else))
+
+  (pseudo (when cond . then)
+    `(scope
+       (b ,(condition-invert cond) $exit)
+       ,@then))
+
+  (pseudo (while test cond . then)
+    `(scope
+       ,test
+       (b ,(condition-invert cond) $exit)
+       ,@then
+       (b $enter)))
+
+  ;; ---
+
+  (block main ()
+    (bl some-function-that-sets-flags)
+    (when ?ne
+      (delay r9 150)))
+
+  ;; --- expands to:
+
+  (block main ()
+    (bl some-function-that-sets-flags)
+    (b ?eq $exit)   ;; scoped to the when, +10 or whatever
+    (mov r9 150)
+    (subs r9 r9 1)
+    (b ?ne $enter)) ;; scoped to the deloy, -4
+#+end_src
+
 * <2023-12-09 Sat> emacs mode
 
 there's a simple emacs major mode for "miriam scheme" now, which
