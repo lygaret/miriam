@@ -66,13 +66,9 @@
   ((opcode? (? condition? #b1110) register? symbol-not-register?)
    (lambda (t o c rd label . instr)
      (let* ((pc       (register? 'pc))
-            (offset   (emit-relocation t label instr))
-            (pcrel    (- offset 8))
-            (imm12    (imm12? (abs pcrel)))
-            (opcode   (if (<= 0 pcrel) (opcode? 'add) (opcode? 'sub))))
-       (if/let ((imm (imm12? (abs pcrel))))
-         (encode/data-processing-immediate t c opcode s rd pc imm12)
-         (emit-error t "label doesn't fit in adr" instr))))))
+            (offset   (emit-relocation t label 'pc13))
+            (opcode   (if (>= 0 offset) (opcode? 'add) (opcode? 'sub))))
+       (encode/data-processing-immediate t c opcode s rd pc offset)))))
        
 ;; ---
 
@@ -158,13 +154,8 @@
   ;; b ?c label
   ((opcode? (? condition? #b1110) symbol-not-register?)
    (lambda (t o c label . instr)
-     (let* ((offset   (emit-relocation t label instr))
-            (offset   (simm24? offset))
-            (adjusted (and offset (adjust/pcrel offset))))
-       (log "branch to " label adjusted)
-       (if adjusted
-           (encode/branch-with-link t c (flag? l?) adjusted)
-           (emit-error t "label is too far away, or not word aligned" label))))))
+     (let* ((offset (emit-relocation t label 'pc24)))
+       (encode/branch-with-link t c (flag? l?) offset)))))
 
 (define-instruction
   ((bx #b1011))
@@ -246,12 +237,10 @@
   ;; ldr r0 start (pc rel label)
   ((opcode? (? condition? #b1110) register? symbol-not-register?)
    (lambda (t o c rd label . instr)
-     (let* ((rn     (register? 'pc))
-            (offset (emit-relocation t label instr))
-            (pcrel  (- offset 8))
-            (u?     (<= 0 pcrel))
-            (pcrel  (abs pcrel)))
-       (encode/load-store-immediate-offset t c #t u? b? #f l? rd rn pcrel))))
+     (let* ((rn      (register? 'pc))
+            (offset  (emit-relocation t label 'pc13))
+            (u?      (<= 0 offset)))
+       (encode/load-store-immediate-offset t c #t u? b? #f l? rd rn (abs offset)))))
 
   ;; ldr r0 (++ r1) [+-#imm][rn][rn rrx][rn lsl imm][rn lsl rs]
   ((opcode? (? condition? #b1110) register? target? (? shifter? '(imm 0)))

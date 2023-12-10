@@ -112,15 +112,23 @@
         (emit-label (ctx-out ctx) label)
         (emit-error (ctx-out ctx) "invalid label:" (cadr form))))
 
-    ;; assembles the body code inside a new scope, allowing arbitrary labels
+    (define (eval-scope ctx code)
+      (emit-push-scope (ctx-out ctx))
+      (emit-label (ctx-out ctx) '$enter)
+      (assemble-forms ctx code)
+      (emit-label (ctx-out ctx) '$exit)
+      (emit-pop-scope (ctx-out ctx)))
+
+    ;; assembles the body code inside a new scope, without a specific name
+    (define (assemble-scope ctx form)
+      (let ((code (cdr form)))
+        (eval-scope ctx code)))
+
+    ;; assembles the body code inside a named new scope
     (define (assemble-block ctx form)
       (match-let (((name args . rest) (cdr form)))
         (emit-label (ctx-out ctx) name)
-        (emit-push-scope (ctx-out ctx))
-        (emit-label (ctx-out ctx) '$enter)
-        (assemble-forms ctx rest)
-        (emit-label (ctx-out ctx) '$exit)
-        (emit-pop-scope (ctx-out ctx))))
+        (eval-scope ctx rest)))
 
     ;; reserve some amount of space, setting data
     ;; ie. (res "this is a utf-8 string")   <- the utf-8 bytes of the string
@@ -128,12 +136,13 @@
     (define (assemble-reserve ctx form)
       (define reserve-matcher
         (minimeta
-         (or (and u/s-byte        (lambda (t value) (integer->bytevector value 1)))
-             (and u/s-hword       (lambda (t value) (integer->bytevector value 2)))
-             (and u/s-word        (lambda (t value) (integer->bytevector value 4)))
-             (and u/s-dword       (lambda (t value) (integer->bytevector value 8)))
-             (and string?         (lambda (t value) (string->utf8 value)))
-             (and unquote?        (lambda (t value . form) (expand-form ctx form))))))
+         (or (and u/s-byte             (lambda (t value) (integer->bytevector value 1)))
+             (and u/s-hword            (lambda (t value) (integer->bytevector value 2)))
+             (and u/s-word             (lambda (t value) (integer->bytevector value 4)))
+             (and u/s-dword            (lambda (t value) (integer->bytevector value 8)))
+             (and string?              (lambda (t value) (string->utf8 value)))
+             (and symbol-not-register? (lambda (t label) (integer->bytevector (emit-relocation (ctx-out ctx) label 'abs32) 4)))
+             (and unquote?             (lambda (t value . form) (expand-form ctx form))))))
 
       (if/let ((value (reserve-matcher '() (cdr form))))
         (emit-bytevector (ctx-out ctx) value)
@@ -169,8 +178,10 @@
           ((pseudo) (define-pseudo ctx code))
           ((!)      (context-eval  ctx (cdr code)))
 
+          ((scope)  (assemble-scope ctx code))
           ((label)  (assemble-label ctx code))
           ((block)  (assemble-block ctx code))
+
           ((resv)   (assemble-reserve ctx code))
           ((align)  (assemble-align ctx code))
           (else
@@ -194,14 +205,10 @@
       (let ((out (ctx-out ctx)))
         (do ((next (asm-relocs out) (cdr next)))
             ((null? next))
-          (let ((label  (caar next))
-                (form   (cadar next))
-                (offset (caddar next))
-                (scopes (car (cdddar next))))
-            (if (lookup-label out label scopes)
-                (call-in-scope
-                 out offset scopes
-                 (lambda ()
-                   (let ((patch (eval-opcode ctx form)))
-                     (bytevector-copy! bytes offset patch 0 4))))
-                (emit-error out (list "undefined label:" label)))))))))
+          (let ((label   (caar next))
+                (type    (cadar next))
+                (fillptr (caddar next))
+                (scopes  (car (cdddar next))))
+            (if/let ((offset (lookup-label out label scopes)))
+                    (patch-reloc bytes type fillptr offset)
+                    (emit-error (ctx-out ctx) "undefined label" label))))))))

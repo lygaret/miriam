@@ -32,6 +32,33 @@ I'm realizing, reading examples of getting various peripherals up, that I need a
   - assemble-time: pseudos, definitions, relocation/link-instructions?
   - run-time: actual code blocks, data sections
 
+** plan
+
+- write a filesystem abstraction
+- ~assemble~ takes a module name outputs a "module"
+  - from an assembly file:
+  - ~(import (some module name))~ makes environment and exports available
+  - ~(import comp (same module name))~ makes only the environment available (pseudos and comptime functions)
+- a module looks kinda like:
+  - exports are label+data offset which are intended to be resolvable from other modules
+  - imports are relocs from other modules, which can't be resolved until the modules are finally laid out
+  #+begin_src prog
+    (%module
+      (name with path)
+      (exports
+        (label offset)
+        (label offset))
+      (imports
+        (reloc-type offset (label (module name with path)))
+        (reloc-type offset (label (module name with path))))
+      (data #vu8()))
+  #+end_src
+- linking the final executable image:
+  - topological sort dependencies, and figure out runtime offsets
+  - in order of dependencies:
+    - write out module's bytestream
+    - fixup any outstanding relocations
+
 * <2023-12-09 Sat> data representation
 
 a _value_ is a (little-endian) 32-bit word

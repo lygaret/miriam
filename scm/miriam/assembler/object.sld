@@ -10,6 +10,7 @@
           asm-errors
 
           lookup-label
+          patch-reloc
 
           emit-error
           emit-align
@@ -30,6 +31,7 @@
 
   (import (miriam prelude))
   (import (miriam logger))
+  (import (miriam assembler syntax))
   (import (miriam structs buffer))
   (import (miriam structs append-list))
 
@@ -132,9 +134,38 @@
             (set-asm-fillptr! out old-fillptr)
             (set-asm-scopes! out old-scopes)))))
 
-    (define (push-reloc out label form offset)
-      (set-asm-relocs! out (cons (list label form offset (asm-scopes out)) (asm-relocs out)))
+    (define (push-reloc out label type offset)
+      (set-asm-relocs! out (cons (list label type offset (asm-scopes out)) (asm-relocs out)))
       0)
+
+    (define (resolve-reloc out type fillptr offset)
+      (case type
+        ((pc24)  (simm24?    (/ (- offset fillptr 8) 4)))
+        ((pc13)  (u/s-imm12? (- offset fillptr 8)))
+        ((abs32) offset)
+        (else    0)))
+
+    (define (eval-reloc type fillptr offset)
+      (case type
+        ((abs32)
+         (values #x00000000 (b& #xFFFFFFFF offset)))
+        ((pc24)
+         (values #xFF000000 (b& #xFFFFFFFF (/ (- offset fillptr 8) 4))))
+        ((pc13)
+         (let* ((pcrel (/ (- offset fillptr 8) 4))
+                (u     (if (<= 0 pcrel) 1 0))
+                (pcrel (b& #xFFF (abs pcrel))))
+           (values #xFFEFF000 (b+ (b<< u 20) (b& #xFFF (abs pcrel))))))))
+
+    (define (patch-reloc bytes type fillptr offset)
+      (let-values (((mask value) (eval-reloc type fillptr offset))
+                   ((word)       (bytevector-u8-ref bytes fillptr)))
+        (let ((word (b& mask word)))
+          (log "patch reloc" (number->string mask 16) (number->string value 16) (number->string word 16) type fillptr offset)
+          (bytevector-u8-set! bytes fillptr       (b+ (b& #xFF value)          (b& #xFF word)))
+          (bytevector-u8-set! bytes (+ 1 fillptr) (b+ (b& #xFF (b>> value 8))  (b& #xFF (b>> word 8))))
+          (bytevector-u8-set! bytes (+ 2 fillptr) (b+ (b& #xFF (b>> value 16)) (b& #xFF (b>> word 16))))
+          (bytevector-u8-set! bytes (+ 3 fillptr) (b+ (b& #xFF (b>> value 24)) (b& #xFF (b>> word 24)))))))
 
     ;; ---
 
@@ -162,10 +193,10 @@
           (let ((space (make-bytevector (- alignment rem) 0)))
             (emit-bytevector out space))))))
 
-    (define (emit-relocation out label form)
+    (define (emit-relocation out label type)
       (if/let ((offset (lookup-label out label (asm-scopes out))))
-        (- offset (asm-fillptr out))
-        (push-reloc out label form (asm-fillptr out))))))
+              (resolve-reloc out type (asm-fillptr out) offset)
+              (push-reloc out label type (asm-fillptr out))))
 
     (define (test)
       (let ((out (make-asm-object)))
@@ -208,4 +239,4 @@
         (emit-bytevector out #vu8(0 0 0 0 0 0 0 0))
         (emit-bytevector out #vu8(0 0 0 0 0 0 0 0))
         (emit-label out 'bar)
-        out))
+        out))))
