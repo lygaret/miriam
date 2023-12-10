@@ -29,7 +29,7 @@
             (env (environment '(scheme base)
                               '(miriam logger)
                               '(miriam assembler numbers)
-                              '(miriam assembler eval))))
+                              '(miriam assembler syntax))))
         `((out     . ,out)
           (env     . ,env)
           (pseudos . ()))))

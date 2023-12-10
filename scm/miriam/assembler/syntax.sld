@@ -1,5 +1,5 @@
 (define-library (miriam assembler syntax)
-  (export b& b+ b<< b>> flag?
+  (export b~ b& b+ b<< b>> flag?
           register?
           sregister? sregister-r sregister-pos?
           wregister? wregister-r wregister-w?
@@ -12,6 +12,7 @@
           copro?
           copro-register?
           condition?
+          condition-invert
           shift-type?
           shift-w-imm?
           shift-w-reg?
@@ -21,12 +22,12 @@
           target-p?
           target-w?
           shifter?
-          shifter-mode   
-          shifter-rn     
-          shifter-shtyp  
-          shifter-shoff  
-          shifter-rs     
-          shifter-imm    
+          shifter-mode
+          shifter-rn
+          shifter-shtyp
+          shifter-shoff
+          shifter-rs
+          shifter-imm
           barrier-option?
           unquote?
           unquote-splice?
@@ -45,33 +46,44 @@
   (import (srfi 60)) ; integers-as-bits
 
   (begin
+    (define-syntax b~  (syntax-rules () ((_ rest ...) (bitwise-not rest ...))))
     (define-syntax b&  (syntax-rules () ((_ rest ...) (bitwise-and rest ...))))
     (define-syntax b+  (syntax-rules () ((_ rest ...) (bitwise-ior rest ...))))
     (define-syntax b<< (syntax-rules () ((_ rest ...) (arithmetic-shift rest ...))))
     (define-syntax b>> (syntax-rules () ((_ n amt)    (arithmetic-shift n (- amt)))))
 
     (define (flag? n) (if n 1 0))
-    
-    (define conditions-table
-      (alist->hash-table
-       '((?eq . #b0000)               ; Z = 1             (zero)
-         (?ne . #b0001)               ; Z = 0
-         (?cs . #b0010) (hs . #b0010) ; C = 1             (carry)
-         (?cc . #b0011) (lo . #b0011) ; C = 0
-         (?mi . #b0100)               ; N = 1             (negative)
-         (?pl . #b0101)               ; N = 0
-         (?vs . #b0110)               ; V = 1             (oVerflow)
-         (?vc . #b0111)               ; V = 0
-         (?hi . #b1000)               ; C = 1 AND Z = 0   (unsigned higher)
-         (?ls . #b1001)               ; C = 0 OR Z = 1    (unsigned lower or same)
-         (?ge . #b1010)               ; N = V             (signed greater or same)
-         (?lt . #b1011)               ; N != V            (signed less)
-         (?gt . #b1100)               ; Z = 0 AND N = v   (signed greater)
-         (?le . #b1101)               ; Z = 1 OR N != V   (signed less or same)
-         (?al . #b1110)) eqv?))       ; never conditional (always)
+
+    (define conditions-alist
+      '((?eq . #b0000)               ; Z = 1             (zero)
+        (?ne . #b0001)               ; Z = 0
+        (?cs . #b0010) (hs . #b0010) ; C = 1             (carry)
+        (?cc . #b0011) (lo . #b0011) ; C = 0
+        (?mi . #b0100)               ; N = 1             (negative)
+        (?pl . #b0101)               ; N = 0
+        (?vs . #b0110)               ; V = 1             (oVerflow)
+        (?vc . #b0111)               ; V = 0
+        (?hi . #b1000)               ; C = 1 AND Z = 0   (unsigned higher)
+        (?ls . #b1001)               ; C = 0 OR Z = 1    (unsigned lower or same)
+        (?ge . #b1010)               ; N = V             (signed greater or same)
+        (?lt . #b1011)               ; N != V            (signed less)
+        (?gt . #b1100)               ; Z = 0 AND N = v   (signed greater)
+        (?le . #b1101)               ; Z = 1 OR N != V   (signed less or same)
+        (?al . #b1110)               ; always
+        (?nv . #b1111)))             ; never
 
     (define (condition? sym)
-      (hash-table-ref conditions-table sym (lambda () #f)))
+      (let ((entry (assoc sym conditions-alist)))
+        (and entry (cdr entry))))
+
+    (define (condition-invert sym)
+      (let ((condition (condition? sym)))
+        (and condition
+             (let iter ((next    conditions-alist)
+                        (invcond (b& #b1111 (bitwise-xor condition 1))))
+               (if (eq? invcond (cdar next))
+                   (caar next)
+                   (iter (cdr next) invcond))))))
 
     ;; ----
 
@@ -130,7 +142,7 @@
       (hash-table-ref registers-table sym (lambda () #f)))
 
     (define (symbol-not-register? sym)
-      (and (symbol? sym) (not (register? sym)) sym)) 
+      (and (symbol? sym) (not (register? sym)) sym))
 
     ;; lookup the register number by symbol
     (define (-register? sym)
@@ -244,7 +256,7 @@
           (when/let ((shtyp (shift-type? (cadr form))))
             (when (null? (cddr form))
               (return #f))
-            
+
             (when/let ((imm (imm12?     (caddr form)))) (return (list 'reg+imm rn shtyp imm)))
             (when/let ((imm (-imm12?    (caddr form)))) (return (list 'reg-imm rn shtyp imm)))
             (when/let ((rs  (register?  (caddr form)))) (return (list 'reg+reg rn shtyp rs)))
@@ -378,4 +390,3 @@
              (let* ((output (b<< (/ rot 2) 8))
                     (output (b+ output encode)))
                (return output)))))))))
-

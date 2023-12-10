@@ -56,7 +56,7 @@
   `(("(\\(pseudo\\_>\\)\\s-*(\\(\\sw+\\)" (1 font-lock-keyword-face) (2 font-lock-function-name-face))
     ("(\\(block\\_>\\)\\s-*\\(\\sw+\\)"   (1 font-lock-keyword-face) (2 font-lock-function-name-face))
     ("(\\(scope\\_>\\)"                   (1 font-lock-keyword-face))
-    ("\\_<\\?\\(?:al\\|c[cs]\\|eq\\|g[et]\\|hi\\|l[est]\\|mi\\|ne\\|pl\\|v[cs]\\)\\_>" . font-lock-builtin-face)
+    ("\\_<\\?\\(?:al\\|nv\\|c[cs]\\|eq\\|g[et]\\|hi\\|l[est]\\|mi\\|ne\\|pl\\|v[cs]\\)\\_>" . font-lock-builtin-face)
     ("\\_<\\(?:fb\\|ip\\|lr\\|pc\\|r\\(?:1[0-5]\\|[0-9]\\)\\|s[bl]\\)\\_>" . font-lock-variable-name-face)
     ,@scheme-font-lock-keywords-2))
 

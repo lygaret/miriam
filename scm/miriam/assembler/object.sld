@@ -27,7 +27,11 @@
   (import (scheme cxr))
   (import (scheme write))
 
+  (import (srfi 1))  ; lists
+  (import (srfi 8))  ; recieve
+  (import (srfi 13)) ; strings
   (import (srfi 69)) ; hash tablse
+  (import (rnrs bytevectors))
 
   (import (miriam prelude))
   (import (miriam logger))
@@ -62,7 +66,7 @@
         (lambda ()
           (set! current (+ current 1))
           (string->symbol (string-append "genscope~" (number->string current))))))
-          
+
     (define (push-scope out)
       (set-asm-scopes! out (cons (genscope) (asm-scopes out)))
       (car (asm-scopes out)))
@@ -94,19 +98,32 @@
           (set! scoped-entry (cons (peek-scope out) offset))
           (set-cdr! entry (cons scoped-entry (cdr entry))))))
 
-    (define (lookup-scoped-label entry scope)
-      (let ((scoped-entry (assoc scope entry)))
-        (and scoped-entry (cdr scoped-entry))))
+    (define (label-descoped? label)
+      (let* ((name  (symbol->string label))
+             (count (string-suffix-length name "^^^^^^^^^^^^^^^^")))
+        (and (< 0 count)
+             (cons count (string->symbol (string-drop-right name count))))))
+
+    (define (lookup-scoped-label out label scopes)
+      (if/let ((entry (assoc label (asm-labels out))))
+              (let iter ((next scopes))
+                (if (null? next)
+                    #f
+                    (let ((scoped-entry (assq (car next) (cdr entry))))
+                      (or (and scoped-entry (cdr scoped-entry))
+                          (iter (cdr next))))))
+              #f))
+
+    (define (lookup-descoped-label out label scopes)
+      (if/let ((descope (label-descoped? label)))
+              (let ((count (car descope))
+                    (label (cdr descope)))
+                (lookup-scoped-label out label (drop scopes count)))
+              #f))
 
     (define (lookup-label out label scopes)
-      (if/let ((entry (assoc label (asm-labels out))))
-        (let iter ((next scopes))
-          (if (null? next)
-              (lookup-scoped-label (cdr entry) '())
-              (or
-               (lookup-scoped-label (cdr entry) (car next))
-               (iter (cdr next)))))
-        #f))
+      (or (lookup-descoped-label out label scopes)
+          (lookup-scoped-label out label scopes)))
 
     ;; ---
 
@@ -158,14 +175,11 @@
            (values #xFFEFF000 (b+ (b<< u 20) (b& #xFFF (abs pcrel))))))))
 
     (define (patch-reloc bytes type fillptr offset)
-      (let-values (((mask value) (eval-reloc type fillptr offset))
-                   ((word)       (bytevector-u8-ref bytes fillptr)))
-        (let ((word (b& mask word)))
+      (let* ((little (endianness little))
+             (word   (bytevector-u32-ref bytes fillptr little)))
+        (let-values (((mask value) (eval-reloc type fillptr offset)))
           (log "patch reloc" (number->string mask 16) (number->string value 16) (number->string word 16) type fillptr offset)
-          (bytevector-u8-set! bytes fillptr       (b+ (b& #xFF value)          (b& #xFF word)))
-          (bytevector-u8-set! bytes (+ 1 fillptr) (b+ (b& #xFF (b>> value 8))  (b& #xFF (b>> word 8))))
-          (bytevector-u8-set! bytes (+ 2 fillptr) (b+ (b& #xFF (b>> value 16)) (b& #xFF (b>> word 16))))
-          (bytevector-u8-set! bytes (+ 3 fillptr) (b+ (b& #xFF (b>> value 24)) (b& #xFF (b>> word 24)))))))
+          (bytevector-u32-set! bytes fillptr (b+ (b& (b~ mask) value) (b& mask word)) little))))
 
     ;; ---
 
