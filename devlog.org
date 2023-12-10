@@ -2,6 +2,11 @@
 #+AUTHOR:  Jon Raphaelson
 #+EMAIL:   jon@accidental.cc
 
+- [[https://lygaret.github.io/oaksim][arm simulator]]
+- [[https://lygaret.github.io/disasm][arm disassembler]]
+- [[file:doc/armv7-reference.pdf][armv7 architecture reference manual]]
+- [[file:doc/r7rs.pdf][r7rs scheme]]
+
 * <2023-12-10 Sun> nicer pseudos
 
 with the ability to "descope" labels (refer to the same name at a higher scope

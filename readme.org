@@ -80,6 +80,11 @@ As such, a reading list, in no particular order:
   - [[https://web.archive.org/web/20191008050811/http://home.pipeline.com/~hbaker1/YoungGen.html][h. baker: 'infant mortality' and generational garbage collection]]
 - [[http://mumble.net/~jar/pubs/secureos/secureos.html][Jonathan A. Rees: A Security Kernel Based on the Lambda Calculus]]
 
+** tools
+
+- [[https://github.com/CzBiX/disasm-web][disasm-web, by CzBiX]], a really useful, very simple web-based arm disassembler
+- [[https://github.com/Wunkolo/OakSim][oaksim, by Wunkolo]], a web-based arm assembler+simulator
+
 * license
 
 Copyright (c) 2023 Jonathan Raphaelson
