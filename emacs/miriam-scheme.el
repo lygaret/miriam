@@ -43,18 +43,26 @@
 (defvar miriam-scheme-font-lock-keywords
   `(("(\\(pseudo\\_>\\)" (1 font-lock-keyword-face))
     ("(\\(block\\_>\\)" (1 font-lock-keyword-face))
+    ("(\\(scope\\_>\\)" (1 font-lock-keyword-face))
     ,@scheme-font-lock-keywords))
 
 (defvar miriam-scheme-font-lock-keywords-1
   `(("(\\(pseudo\\_>\\)\\s-*(\\(\\sw+\\)" (1 font-lock-keyword-face) (2 font-lock-function-name-face))
     ("(\\(block\\_>\\)\\s-*\\(\\sw+\\)"   (1 font-lock-keyword-face) (2 font-lock-function-name-face))
+    ("(\\(scope\\_>\\)"                   (1 font-lock-keyword-face))
     ,@scheme-font-lock-keywords-1))
 
 (defvar miriam-scheme-font-lock-keywords-2
-  miriam-scheme-font-lock-keywords-1)
+  `(("(\\(pseudo\\_>\\)\\s-*(\\(\\sw+\\)" (1 font-lock-keyword-face) (2 font-lock-function-name-face))
+    ("(\\(block\\_>\\)\\s-*\\(\\sw+\\)"   (1 font-lock-keyword-face) (2 font-lock-function-name-face))
+    ("(\\(scope\\_>\\)"                   (1 font-lock-keyword-face))
+    ("\\_<\\?\\(?:al\\|c[cs]\\|eq\\|g[et]\\|hi\\|l[est]\\|mi\\|ne\\|pl\\|v[cs]\\)\\_>" . font-lock-builtin-face)
+    ("\\_<\\(?:fb\\|ip\\|lr\\|pc\\|r\\(?:1[0-5]\\|[0-9]\\)\\|s[bl]\\)\\_>" . font-lock-variable-name-face)
+    ,@scheme-font-lock-keywords-2))
 
 (put 'pseudo 'miriam-scheme-indent-function 1)
 (put 'block  'miriam-scheme-indent-function 2)
+(put 'scope  'miriam-scheme-indent-function 0)
 
 ;; FIXME this duplicates almost all of scheme-indent-function.
 ;; Extract common code to a subroutine.

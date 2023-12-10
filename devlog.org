@@ -2,6 +2,36 @@
 #+AUTHOR:  Jon Raphaelson
 #+EMAIL:   jon@accidental.cc
 
+* <2023-12-09 Sat> emacs mode
+
+there's a simple emacs major mode for "miriam scheme" now, which
+automatically sets up some of the indentation for macros and syntax
+highlighting for the assembler.
+
+I'll probably break it up into "miriam-scheme" and "miriam-asm" modes,
+since I'll want to not have the highlighting on ~pseudo~ and the like
+in the scheme code, but for now it's pretty nice.
+
+-- blog post idea: how to do that?
+
+For now, everything is just nicely setup in the ~.dir-locals.el~ file;
+just opening a file in the project in emacs will prompt and then apply
+everything.
+
+If it's ever a necessity to export it, it'll need more clean up.
+
+* <2023-12-09 Sat> assembler: multi-module
+
+I'm realizing, reading examples of getting various peripherals up, that I need a linker.
+
+- I need some kind of serializable output format (elf but s-expr)
+- I need some kind of "module" system in the assembler, so that I can collect modules and layout them out
+- I want to be able to <import>, rather than <include>
+
+- a module has _assemble-time_ parts, and _run-time_ parts
+  - assemble-time: pseudos, definitions, relocation/link-instructions?
+  - run-time: actual code blocks, data sections
+
 * <2023-12-09 Sat> data representation
 
 a _value_ is a (little-endian) 32-bit word
@@ -17,21 +47,21 @@ constraints:
 
 ** immediates
 
-#+begin_src 
+#+begin_src
 (little endian, low byte is first)
 76543210 FEDCBA98 76543210 FEDCBA98
 
 type     data
 xxxx0001 xxxxxxxx xxxxxxxx xxxxxxxx <- fixnum (28bit signed int)
 xxxx0010 xxxxxxxx xxxxxxxx xxxxxxxx <- utf-8 codepoint (weird encoding, but single-byte encoding is simple still)
-xxxx0011 xxxxxxxx xxxxxxxx xxxxxxxx <- 
-xxxx0101 xxxxxxxx xxxxxxxx xxxxxxxx <- 
-xxxx0110 xxxxxxxx xxxxxxxx xxxxxxxx <- 
-xxxx0111 xxxxxxxx xxxxxxxx xxxxxxxx <- 
-xxxx1001 xxxxxxxx xxxxxxxx xxxxxxxx <- 
-xxxx1010 xxxxxxxx xxxxxxxx xxxxxxxx <- 
-xxxx1011 xxxxxxxx xxxxxxxx xxxxxxxx <- 
-xxxx1101 xxxxxxxx xxxxxxxx xxxxxxxx <- 
+xxxx0011 xxxxxxxx xxxxxxxx xxxxxxxx <-
+xxxx0101 xxxxxxxx xxxxxxxx xxxxxxxx <-
+xxxx0110 xxxxxxxx xxxxxxxx xxxxxxxx <-
+xxxx0111 xxxxxxxx xxxxxxxx xxxxxxxx <-
+xxxx1001 xxxxxxxx xxxxxxxx xxxxxxxx <-
+xxxx1010 xxxxxxxx xxxxxxxx xxxxxxxx <-
+xxxx1011 xxxxxxxx xxxxxxxx xxxxxxxx <-
+xxxx1101 xxxxxxxx xxxxxxxx xxxxxxxx <-
 xxxx1110 xxxxxxxx xxxxxxxx xxxxxxxx <- nil
 xxxx1111 xxxxxxxx xxxxxxxx xxxxxxxx <- undefined
 #+end_src
@@ -39,7 +69,7 @@ xxxx1111 xxxxxxxx xxxxxxxx xxxxxxxx <- undefined
 ** objects
 *** object header
 
-#+begin_src 
+#+begin_src
 gc info  type     size
 76543210 FEDCBA98 76543210 FEDCBA98
 
@@ -48,7 +78,7 @@ ggggtttt ssssssss ssssssss ssssssss
 g7 = forwarded?
 g6 = special? (skipped by gc)
 g5 = align?   (align based on size)
-g3 = 
+g3 =
 
 t  = type
 s  = size (in words if align?)
@@ -73,11 +103,11 @@ some instructions not to forget about:
 general outline of the runtime system, based on a bunch of reading that I've been doing:
 
 - cps conversion + cheney/mta style garbage collection
-- the stack is the nursery of the garbage collectior 
+- the stack is the nursery of the garbage collectior
 - "heap allocation" is pushing to the stack
 - when the stack hits the end of it's page, minor GC
     - this will scan the stack page, copy out objects to the old-space
-    - then trash the stack page and teturn a new one, with 
+    - then trash the stack page and teturn a new one, with
 - heap allocation is simply pushing to the stack
 - limit the stack size to a page
     - when a requested allocation hits the page boundary, minor GC
@@ -261,7 +291,7 @@ it booted!
 kinda!
 
 * <2023-12-04 Mon>
-** scoped labels 
+** scoped labels
 
 - ~scopes~ is a stack of symbols
   - '() means the top-level
@@ -297,7 +327,7 @@ kinda!
   (bl foo)
 #+end_src
 
-* <2023-11-30 Thu> 
+* <2023-11-30 Thu>
 
 At the high level, there's the assembler syntax itself:
 
@@ -313,7 +343,7 @@ At the high level, there's the assembler syntax itself:
 
    ;; labels capture the current offset
    (label name)
- 
+
    ;; blocks are labels with bodies that may use some block-specific syntax
    ;; $enter is a virtual label for just before the block prologue (flags) (more or less synonym for the block name)
    ;; $start is a virtual label for just after  the block prologue (flags) (for tail-cails)
@@ -375,9 +405,9 @@ At the high level, there's the assembler syntax itself:
     (block
       (ldrb r1 r0)              ; load the byte from the string
       (cmp  r1 0)               ; if we've hit the null-terminator, bail
-      (b ?eq $end)              
+      (b ?eq $end)
       (add r0 r0 #1)            ; otherwise, incr the pointer and loop
-      (b $start))               
+      (b $start))
 
     (ldr r2 sp -4)              ; get the stored input address into r2
     (sub r1 r0 r2)              ; calculate length

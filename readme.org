@@ -6,7 +6,7 @@ miriam is:
 
 - a *hobby project*; likely indefinitely undone
 - a kinda scheme, kinda clojure, kinda common lisp
-- a self-hosted, bytecode compiler, runtime, and armv7 assembler
+- a self-hosted bytecode compiler, runtime, and armv7 assembler
 - a bare-metal, language-based operating system
 - a userland that can be used to make one-off games and demos
 
