@@ -93,29 +93,117 @@ I'm realizing, reading examples of getting various peripherals up, that I need a
 ** plan
 
 - write a filesystem abstraction
-- ~assemble~ takes a module name outputs a "module"
-  - from an assembly file:
-  - ~(import (some module name))~ makes environment and exports available
-  - ~(import comp (same module name))~ makes only the environment available (pseudos and comptime functions)
-- a module looks kinda like:
-  - exports are label+data offset which are intended to be resolvable from other modules
-  - imports are relocs from other modules, which can't be resolved until the modules are finally laid out
-  #+begin_src prog
-    (%module
-      (name with path)
-      (exports
-        (label offset)
-        (label offset))
-      (imports
-        (reloc-type offset (label (module name with path)))
-        (reloc-type offset (label (module name with path))))
-      (data #vu8()))
-  #+end_src
+- ~assemble~ takes a module body, outputs an ~<asm-module>~
+  - module body syntax:
+    - ~(import (some module name) ...)~     :: makes the comptime environment available
+    - ~(import prefix (some module name)))~ :: import + allows references to module scoped labels under prefix
+    - ~(export label ...)~                  :: makes this label visible externally (module-scoped)
+    - ~(entry label)~                       :: export + entry point; ignored for imported modules
+    - ~(code (args) ...)~                   :: creates a code section (args are link args)
+    - ~(data (args) ...)~                   :: creates a data section (args are link args)
+    - ~(zeros (args) ...)~                  :: creates a data section with only zeroed reservations
+    #+begin_src miriam-scheme
+      (import     (miriam asm prelude))
+      (import vm/ (miriam vm))
+
+      (entry  main)
+      (export utility-a utility-b some-data-table)
+
+      (define (comptime-func arg)
+        (do something))
+
+      (define comptime-data
+        (something-something))
+
+      (data
+       (label some-data-table)
+       (resv ,(data->bytevector comptime-data)
+       (resv "something something something"))
+
+      (zeros
+       (label some-results-table)
+       (resz 16 mb))
+
+      (pseudo (special-ret)
+       `((mov pc lr)))
+
+      (code
+        (block main (:naked)
+          (mov r0 #x34)
+          (mov r1 #x12)
+          (bl some-func)
+          (b ?nz vm/alloc-cons)
+          (special-ret))
+
+        (block utility-a (:ccall)
+          (mov r0 #56)
+          (ret))
+
+        (block utility-b (:ccall)
+          (...))
+
+        ;; not exported, hence private
+        ;; (ie. the code is compiled into the code section, but the label is invisible)
+        (block utility-c (:naked)
+          (...)))
+    #+end_src
+  - module output:
+    #+begin_src miriam-scheme
+      (<asm-module>
+       (code #vu8(...))
+       (data #vu8(...))
+       (zero size)
+
+       (link
+        (module name)
+        (module name))
+
+       (reloc
+        (reloc-type (module name) label patch-at)
+        (reloc-type (module name) label patch-at)
+        (reloc-type (module name) label patch-at))
+
+       (exports
+        (label section offset)
+        (label section offset)))
+    #+end_src
+
 - linking the final executable image:
   - topological sort dependencies, and figure out runtime offsets
   - in order of dependencies:
     - write out module's bytestream
     - fixup any outstanding relocations
+
+*** chatgpt has this to say about multiple code/data sections
+
+#+begin_quote
+Certainly! Having more than one data section in an ARM assembler module can be quite useful in several scenarios:
+
+1. **Segmentation of Different Data Types**: You might want to separate different types of data. For instance, one section could be dedicated to initialized data (`.data`), another for uninitialized data (`.bss`), and yet another for read-only data (`.rodata`). This helps in organizing data logically and can also assist in memory management.
+
+2. **Memory Access Control**: Different data sections can have different memory access properties. For example, you might want a data section that is read-only (to store constants or configuration data) and another that is writable (for mutable data). This can enhance security and prevent accidental modification of critical data.
+
+3. **Efficiency in Loading and Memory Usage**: Separating data into different sections allows for more efficient loading and memory usage. Data that is not required immediately (or rarely accessed) can be loaded or paged in as needed, reducing the initial memory footprint.
+
+4. **Optimization for Cache Usage**: By grouping frequently accessed data together in one section and less frequently accessed data in another, you can optimize for cache usage. This is because data that is accessed together is more likely to be loaded in the cache together, reducing cache misses.
+
+5. **Linker Script Control**: In complex projects, especially those involving multiple libraries or modules, having multiple data sections gives you finer control in linker scripts. You can allocate different sections to different memory regions or perform other advanced memory management tasks.
+
+6. **Debugging and Profiling**: Having separate data sections can aid in debugging and profiling. For instance, you can easily monitor the access patterns and modifications to different sections, helping identify bugs or performance bottlenecks related to data usage.
+
+7. **Support for Special Hardware Requirements**: Some embedded systems or special-purpose hardware might have specific requirements for data storage (like aligning certain data types to specific memory boundaries). Multiple data sections can help meet these hardware-specific requirements.
+
+8. **Modularity and Maintenance**: In large applications, different modules or components might manage their own data. Having separate data sections for each module can make the code more modular and easier to maintain.
+
+9. **Conditional Compilation**: In some scenarios, you might want to include or exclude certain data based on compile-time options. Having multiple sections can make this process cleaner and more manageable.
+
+10. **Memory Protection and Security**: If the operating system or environment supports it, different data sections can be assigned different protection levels (like non-executable, no-write, etc.), enhancing the overall security of the application.
+
+In summary, multiple data sections in an ARM assembler module can provide benefits in terms of organization, efficiency, security, and flexibility. The specific use cases would depend on the requirements and complexity of the project you're working on.
+
+-- ChatGPT, in response to "I'm writing an assembler for arm as a hobby project, and I'm trying to figure a use-case for having more than one data section in a module; can you think of any?"
+#+end_quote
+
 
 * <2023-12-09 Sat> data representation
 
