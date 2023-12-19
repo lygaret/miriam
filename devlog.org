@@ -7,6 +7,156 @@
 - [[file:doc/armv7-reference.pdf][armv7 architecture reference manual]]
 - [[file:doc/r7rs.pdf][r7rs scheme]]
 
+* <2023-12-19 Tue>
+excellent documentation for the STklos virtual machine:
+[[https://stklos.net/Doc/HTML/vm.html]]
+
+* <2023-12-18 Mon> metaobject protocol, the system
+- vm implements an event loop
+  - run some bytecode & wait for events
+  - scheduler and ability to run multiple parallel loops = preemptive os scheduling
+    - one loop per core; one loop designated system loop (so kernel can assume single core)
+    - "preemptive" at the bytecode instruction level
+      - maybe we don't need a timer, because bytecode dispatch and garbage collection give natural fine-grained preemption points
+    - interrupts push priority messages to the kernel loop for dispatch
+    - watchdog timer interrupts to make sure we're proceeding
+- vm implements the MOP!
+- bytecodes for stack/heap gc + buffer/page management
+  - the vm should handle physical memory
+  - what does virtual memory look like in this system?
+    - on the one hand, we're going for lexical capabilities rather than memory protection
+    - on the other, the ability to map pages is really important for crash/swap/persistance etc
+- bytecodes for lexical environment get/set (local, upvalue, thread (dynamic), global)
+- bytecodes for closure management (create, call)
+- bytecodes for delimited continuations
+  - the _vm_ doesn't have indefinite continuations, only prompt/return or something like that
+  - the _os_ supplies the continuation representing the process caller, which is effectively indefinite to the process
+- bytecodes for generic methods (create, dispatch, add impl)
+  - this is where subtyping and equality exist
+  - dispatch is lexical! the methods have to be visible in our scope
+  - otherwise, there's no way to make a fully private closure
+  - so there can't be like a global table for dispatch
+- bytecodes for event loop
+  - push current time, ticks, ip, etc.
+  - dispatch on task
+  - task -> queue
+  - message -> system
+- bytecodes for allowing direct machine access
+  - hal (registers, low-level io access, etc)
+  - bytecodes to run arbitrary asm blocks
+    - careful with this, since there's no timer based preemption
+  - is it really reified all the way down if the vm isn't flexible?
+    - maybe a bytecode to add new bytecodes
+* <2023-12-11 Mon> module system plan
+- ~assemble~ takes a module body, outputs an ~<asm-module>~
+  - module body syntax:
+    - ~(import (some module name) ...)~     :: makes the comptime environment available
+    - ~(import prefix (some module name)))~ :: import + allows references to module scoped labels under prefix
+    - ~(export label ...)~                  :: makes this label visible externally (module-scoped)
+
+    - ~(code (args) ...)~                   :: creates a code section (args are link args)
+    - ~(data (args) ...)~                   :: creates a data section (args are link args)
+    - ~(zeros (args) ...)~                  :: creates a data section with only zeroed reservations
+    #+begin_src miriam-scheme
+      (import     (miriam asm prelude))
+      (import vm/ (miriam vm))
+
+      (entry  main)
+      (export utility-a utility-b some-data-table)
+
+      (define (comptime-func arg)
+        (do something))
+
+      (define comptime-data
+        (something-something))
+
+      (data
+       (label some-data-table)
+       (resv ,(data->bytevector comptime-data)
+       (resv "something something something"))
+
+      (zeros
+       (label some-results-table)
+       (resz 16 mb))
+
+      (pseudo (special-ret)
+       `((mov pc lr)))
+
+      (code
+        (block main (:naked)
+          (mov r0 #x34)
+          (mov r1 #x12)
+          (bl some-func)
+          (b ?nz vm/alloc-cons)
+          (special-ret))
+
+        (block utility-a (:ccall)
+          (mov r0 #56)
+          (ret))
+
+        (block utility-b (:ccall)
+          (...))
+
+        ;; not exported, hence private
+        ;; (ie. the code is compiled into the code section, but the label is invisible)
+        (block utility-c (:naked)
+          (...)))
+    #+end_src
+  - module output:
+    #+begin_src miriam-scheme
+      (<asm-module>
+       (section code #vu8(...))
+       (section data #vu8(...))
+       (section zero size)
+
+       (link
+        (module section)
+        (module section))
+
+       (reloc
+        (reloc-type (module name) label patch-at)
+        (reloc-type (module name) label patch-at)
+        (reloc-type (module name) label patch-at))
+
+       (exports
+        (label section offset)
+        (label section offset)))
+    #+end_src
+- linking the final executable image:
+  - topological sort dependencies, and figure out runtime offsets
+  - in order of dependencies:
+    - write out module's bytestream
+    - fixup any outstanding relocations
+
+*** chatgpt has this to say about multiple code/data sections
+#+begin_quote
+Certainly! Having more than one data section in an ARM assembler module can be quite useful in several scenarios:
+
+1. **Segmentation of Different Data Types**: You might want to separate different types of data. For instance, one section could be dedicated to initialized data (`.data`), another for uninitialized data (`.bss`), and yet another for read-only data (`.rodata`). This helps in organizing data logically and can also assist in memory management.
+
+2. **Memory Access Control**: Different data sections can have different memory access properties. For example, you might want a data section that is read-only (to store constants or configuration data) and another that is writable (for mutable data). This can enhance security and prevent accidental modification of critical data.
+
+3. **Efficiency in Loading and Memory Usage**: Separating data into different sections allows for more efficient loading and memory usage. Data that is not required immediately (or rarely accessed) can be loaded or paged in as needed, reducing the initial memory footprint.
+
+4. **Optimization for Cache Usage**: By grouping frequently accessed data together in one section and less frequently accessed data in another, you can optimize for cache usage. This is because data that is accessed together is more likely to be loaded in the cache together, reducing cache misses.
+
+5. **Linker Script Control**: In complex projects, especially those involving multiple libraries or modules, having multiple data sections gives you finer control in linker scripts. You can allocate different sections to different memory regions or perform other advanced memory management tasks.
+
+6. **Debugging and Profiling**: Having separate data sections can aid in debugging and profiling. For instance, you can easily monitor the access patterns and modifications to different sections, helping identify bugs or performance bottlenecks related to data usage.
+
+7. **Support for Special Hardware Requirements**: Some embedded systems or special-purpose hardware might have specific requirements for data storage (like aligning certain data types to specific memory boundaries). Multiple data sections can help meet these hardware-specific requirements.
+
+8. **Modularity and Maintenance**: In large applications, different modules or components might manage their own data. Having separate data sections for each module can make the code more modular and easier to maintain.
+
+9. **Conditional Compilation**: In some scenarios, you might want to include or exclude certain data based on compile-time options. Having multiple sections can make this process cleaner and more manageable.
+
+10. **Memory Protection and Security**: If the operating system or environment supports it, different data sections can be assigned different protection levels (like non-executable, no-write, etc.), enhancing the overall security of the application.
+
+In summary, multiple data sections in an ARM assembler module can provide benefits in terms of organization, efficiency, security, and flexibility. The specific use cases would depend on the requirements and complexity of the project you're working on.
+
+-- ChatGPT, in response to "I'm writing an assembler for arm as a hobby project, and I'm trying to figure a use-case for having more than one data section in a module; can you think of any?"
+#+end_quote
+
 * <2023-12-10 Sun> nicer pseudos
 
 with the ability to "descope" labels (refer to the same name at a higher scope
@@ -16,7 +166,7 @@ label naming conflicts.
 next is to really dig into the COMFY core stuff that sassy uses, which, _surprise_
 is based on an H. Baker paper: [[https://web.archive.org/web/20180208043127/http://home.pipeline.com/~hbaker1/sigplannotices/COMFY.TXT][a comfortable set of control primitives for asm programming]]
 
-#+begin_src scheme
+#+begin_src miriam-scheme
   (pseudo (delay reg count)
     `((mov ,reg ,count)
       (scope
@@ -89,121 +239,6 @@ I'm realizing, reading examples of getting various peripherals up, that I need a
 - a module has _assemble-time_ parts, and _run-time_ parts
   - assemble-time: pseudos, definitions, relocation/link-instructions?
   - run-time: actual code blocks, data sections
-
-** plan
-
-- write a filesystem abstraction
-- ~assemble~ takes a module body, outputs an ~<asm-module>~
-  - module body syntax:
-    - ~(import (some module name) ...)~     :: makes the comptime environment available
-    - ~(import prefix (some module name)))~ :: import + allows references to module scoped labels under prefix
-    - ~(export label ...)~                  :: makes this label visible externally (module-scoped)
-    - ~(entry label)~                       :: export + entry point; ignored for imported modules
-    - ~(code (args) ...)~                   :: creates a code section (args are link args)
-    - ~(data (args) ...)~                   :: creates a data section (args are link args)
-    - ~(zeros (args) ...)~                  :: creates a data section with only zeroed reservations
-    #+begin_src miriam-scheme
-      (import     (miriam asm prelude))
-      (import vm/ (miriam vm))
-
-      (entry  main)
-      (export utility-a utility-b some-data-table)
-
-      (define (comptime-func arg)
-        (do something))
-
-      (define comptime-data
-        (something-something))
-
-      (data
-       (label some-data-table)
-       (resv ,(data->bytevector comptime-data)
-       (resv "something something something"))
-
-      (zeros
-       (label some-results-table)
-       (resz 16 mb))
-
-      (pseudo (special-ret)
-       `((mov pc lr)))
-
-      (code
-        (block main (:naked)
-          (mov r0 #x34)
-          (mov r1 #x12)
-          (bl some-func)
-          (b ?nz vm/alloc-cons)
-          (special-ret))
-
-        (block utility-a (:ccall)
-          (mov r0 #56)
-          (ret))
-
-        (block utility-b (:ccall)
-          (...))
-
-        ;; not exported, hence private
-        ;; (ie. the code is compiled into the code section, but the label is invisible)
-        (block utility-c (:naked)
-          (...)))
-    #+end_src
-  - module output:
-    #+begin_src miriam-scheme
-      (<asm-module>
-       (code #vu8(...))
-       (data #vu8(...))
-       (zero size)
-
-       (link
-        (module name)
-        (module name))
-
-       (reloc
-        (reloc-type (module name) label patch-at)
-        (reloc-type (module name) label patch-at)
-        (reloc-type (module name) label patch-at))
-
-       (exports
-        (label section offset)
-        (label section offset)))
-    #+end_src
-
-- linking the final executable image:
-  - topological sort dependencies, and figure out runtime offsets
-  - in order of dependencies:
-    - write out module's bytestream
-    - fixup any outstanding relocations
-
-*** chatgpt has this to say about multiple code/data sections
-
-#+begin_quote
-Certainly! Having more than one data section in an ARM assembler module can be quite useful in several scenarios:
-
-1. **Segmentation of Different Data Types**: You might want to separate different types of data. For instance, one section could be dedicated to initialized data (`.data`), another for uninitialized data (`.bss`), and yet another for read-only data (`.rodata`). This helps in organizing data logically and can also assist in memory management.
-
-2. **Memory Access Control**: Different data sections can have different memory access properties. For example, you might want a data section that is read-only (to store constants or configuration data) and another that is writable (for mutable data). This can enhance security and prevent accidental modification of critical data.
-
-3. **Efficiency in Loading and Memory Usage**: Separating data into different sections allows for more efficient loading and memory usage. Data that is not required immediately (or rarely accessed) can be loaded or paged in as needed, reducing the initial memory footprint.
-
-4. **Optimization for Cache Usage**: By grouping frequently accessed data together in one section and less frequently accessed data in another, you can optimize for cache usage. This is because data that is accessed together is more likely to be loaded in the cache together, reducing cache misses.
-
-5. **Linker Script Control**: In complex projects, especially those involving multiple libraries or modules, having multiple data sections gives you finer control in linker scripts. You can allocate different sections to different memory regions or perform other advanced memory management tasks.
-
-6. **Debugging and Profiling**: Having separate data sections can aid in debugging and profiling. For instance, you can easily monitor the access patterns and modifications to different sections, helping identify bugs or performance bottlenecks related to data usage.
-
-7. **Support for Special Hardware Requirements**: Some embedded systems or special-purpose hardware might have specific requirements for data storage (like aligning certain data types to specific memory boundaries). Multiple data sections can help meet these hardware-specific requirements.
-
-8. **Modularity and Maintenance**: In large applications, different modules or components might manage their own data. Having separate data sections for each module can make the code more modular and easier to maintain.
-
-9. **Conditional Compilation**: In some scenarios, you might want to include or exclude certain data based on compile-time options. Having multiple sections can make this process cleaner and more manageable.
-
-10. **Memory Protection and Security**: If the operating system or environment supports it, different data sections can be assigned different protection levels (like non-executable, no-write, etc.), enhancing the overall security of the application.
-
-In summary, multiple data sections in an ARM assembler module can provide benefits in terms of organization, efficiency, security, and flexibility. The specific use cases would depend on the requirements and complexity of the project you're working on.
-
--- ChatGPT, in response to "I'm writing an assembler for arm as a hobby project, and I'm trying to figure a use-case for having more than one data section in a module; can you think of any?"
-#+end_quote
-
 
 * <2023-12-09 Sat> data representation
 
