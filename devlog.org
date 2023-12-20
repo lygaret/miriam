@@ -17,7 +17,8 @@ excellent documentation for the STklos virtual machine:
   - scheduler and ability to run multiple parallel loops = preemptive os scheduling
     - one loop per core; one loop designated system loop (so kernel can assume single core)
     - "preemptive" at the bytecode instruction level
-      - maybe we don't need a timer, because bytecode dispatch and garbage collection give natural fine-grained preemption points
+      - maybe we don't need a timer, because bytecode dispatch and garbage collection give natural
+        fine-grained preemption points
     - interrupts push priority messages to the kernel loop for dispatch
     - watchdog timer interrupts to make sure we're proceeding
 - vm implements the MOP!
@@ -30,7 +31,8 @@ excellent documentation for the STklos virtual machine:
 - bytecodes for closure management (create, call)
 - bytecodes for delimited continuations
   - the _vm_ doesn't have indefinite continuations, only prompt/return or something like that
-  - the _os_ supplies the continuation representing the process caller, which is effectively indefinite to the process
+  - the _os_ supplies the continuation representing the process caller, which is effectively
+    indefinite to the process
 - bytecodes for generic methods (create, dispatch, add impl)
   - this is where subtyping and equality exist
   - dispatch is lexical! the methods have to be visible in our scope
@@ -50,13 +52,19 @@ excellent documentation for the STklos virtual machine:
 * <2023-12-11 Mon> module system plan
 - ~assemble~ takes a module body, outputs an ~<asm-module>~
   - module body syntax:
-    - ~(import (some module name) ...)~     :: makes the comptime environment available
-    - ~(import prefix (some module name)))~ :: import + allows references to module scoped labels under prefix
-    - ~(export label ...)~                  :: makes this label visible externally (module-scoped)
+    - ~(import (some module name) ...)~
+      :: makes the comptime environment available
+    - ~(import prefix (some module name)))~
+      :: import + allows references to module scoped labels under prefix
+    - ~(export label ...)~
+      :: makes this label visible externally (module-scoped)
+    - ~(code (args) ...)~
+      :: creates a code section (args are link args)
+    - ~(data (args) ...)~
+      :: creates a data section (args are link args)
+    - ~(zeros (args) ...)~
+      :: creates a data section with only zeroed reservations
 
-    - ~(code (args) ...)~                   :: creates a code section (args are link args)
-    - ~(data (args) ...)~                   :: creates a data section (args are link args)
-    - ~(zeros (args) ...)~                  :: creates a data section with only zeroed reservations
     #+begin_src miriam-scheme
       (import     (miriam asm prelude))
       (import vm/ (miriam vm))
@@ -102,6 +110,7 @@ excellent documentation for the STklos virtual machine:
         (block utility-c (:naked)
           (...)))
     #+end_src
+
   - module output:
     #+begin_src miriam-scheme
       (<asm-module>
@@ -122,6 +131,7 @@ excellent documentation for the STklos virtual machine:
         (label section offset)
         (label section offset)))
     #+end_src
+
 - linking the final executable image:
   - topological sort dependencies, and figure out runtime offsets
   - in order of dependencies:
@@ -130,41 +140,68 @@ excellent documentation for the STklos virtual machine:
 
 *** chatgpt has this to say about multiple code/data sections
 #+begin_quote
-Certainly! Having more than one data section in an ARM assembler module can be quite useful in several scenarios:
+Certainly! Having more than one data section in an ARM assembler module can be quite useful in
+several scenarios:
 
-1. **Segmentation of Different Data Types**: You might want to separate different types of data. For instance, one section could be dedicated to initialized data (`.data`), another for uninitialized data (`.bss`), and yet another for read-only data (`.rodata`). This helps in organizing data logically and can also assist in memory management.
+1. **Segmentation of Different Data Types**: You might want to separate different types of data. For
+   instance, one section could be dedicated to initialized data (`.data`), another for uninitialized
+   data (`.bss`), and yet another for read-only data (`.rodata`). This helps in organizing data
+   logically and can also assist in memory management.
 
-2. **Memory Access Control**: Different data sections can have different memory access properties. For example, you might want a data section that is read-only (to store constants or configuration data) and another that is writable (for mutable data). This can enhance security and prevent accidental modification of critical data.
+2. **Memory Access Control**: Different data sections can have different memory access
+   properties. For example, you might want a data section that is read-only (to store constants or
+   configuration data) and another that is writable (for mutable data). This can enhance security
+   and prevent accidental modification of critical data.
 
-3. **Efficiency in Loading and Memory Usage**: Separating data into different sections allows for more efficient loading and memory usage. Data that is not required immediately (or rarely accessed) can be loaded or paged in as needed, reducing the initial memory footprint.
+3. **Efficiency in Loading and Memory Usage**: Separating data into different sections allows for
+   more efficient loading and memory usage. Data that is not required immediately (or rarely
+   accessed) can be loaded or paged in as needed, reducing the initial memory footprint.
 
-4. **Optimization for Cache Usage**: By grouping frequently accessed data together in one section and less frequently accessed data in another, you can optimize for cache usage. This is because data that is accessed together is more likely to be loaded in the cache together, reducing cache misses.
+4. **Optimization for Cache Usage**: By grouping frequently accessed data together in one section
+   and less frequently accessed data in another, you can optimize for cache usage. This is because
+   data that is accessed together is more likely to be loaded in the cache together, reducing cache
+   misses.
 
-5. **Linker Script Control**: In complex projects, especially those involving multiple libraries or modules, having multiple data sections gives you finer control in linker scripts. You can allocate different sections to different memory regions or perform other advanced memory management tasks.
+5. **Linker Script Control**: In complex projects, especially those involving multiple libraries or
+   modules, having multiple data sections gives you finer control in linker scripts. You can
+   allocate different sections to different memory regions or perform other advanced memory
+   management tasks.
 
-6. **Debugging and Profiling**: Having separate data sections can aid in debugging and profiling. For instance, you can easily monitor the access patterns and modifications to different sections, helping identify bugs or performance bottlenecks related to data usage.
+6. **Debugging and Profiling**: Having separate data sections can aid in debugging and
+   profiling. For instance, you can easily monitor the access patterns and modifications to
+   different sections, helping identify bugs or performance bottlenecks related to data usage.
 
-7. **Support for Special Hardware Requirements**: Some embedded systems or special-purpose hardware might have specific requirements for data storage (like aligning certain data types to specific memory boundaries). Multiple data sections can help meet these hardware-specific requirements.
+7. **Support for Special Hardware Requirements**: Some embedded systems or special-purpose hardware
+   might have specific requirements for data storage (like aligning certain data types to specific
+   memory boundaries). Multiple data sections can help meet these hardware-specific requirements.
 
-8. **Modularity and Maintenance**: In large applications, different modules or components might manage their own data. Having separate data sections for each module can make the code more modular and easier to maintain.
+8. **Modularity and Maintenance**: In large applications, different modules or components might
+   manage their own data. Having separate data sections for each module can make the code more
+   modular and easier to maintain.
 
-9. **Conditional Compilation**: In some scenarios, you might want to include or exclude certain data based on compile-time options. Having multiple sections can make this process cleaner and more manageable.
+9. **Conditional Compilation**: In some scenarios, you might want to include or exclude certain data
+   based on compile-time options. Having multiple sections can make this process cleaner and more
+   manageable.
 
-10. **Memory Protection and Security**: If the operating system or environment supports it, different data sections can be assigned different protection levels (like non-executable, no-write, etc.), enhancing the overall security of the application.
+10. **Memory Protection and Security**: If the operating system or environment supports it,
+    different data sections can be assigned different protection levels (like non-executable,
+    no-write, etc.), enhancing the overall security of the application.
 
-In summary, multiple data sections in an ARM assembler module can provide benefits in terms of organization, efficiency, security, and flexibility. The specific use cases would depend on the requirements and complexity of the project you're working on.
+In summary, multiple data sections in an ARM assembler module can provide benefits in terms of
+organization, efficiency, security, and flexibility. The specific use cases would depend on the
+requirements and complexity of the project you're working on.
 
--- ChatGPT, in response to "I'm writing an assembler for arm as a hobby project, and I'm trying to figure a use-case for having more than one data section in a module; can you think of any?"
-#+end_quote
+-- ChatGPT, in response to "I'm writing an assembler for arm as a hobby project, and I'm trying to
+   figure a use-case for having more than one data section in a module; can you think of any?"
+   #+end_quote
 
 * <2023-12-10 Sun> nicer pseudos
 
-with the ability to "descope" labels (refer to the same name at a higher scope
-explicitly), we're able to do some nifty ~pseudo~ macros without running into
-label naming conflicts.
+with the ability to "descope" labels (refer to the same name at a higher scope explicitly), we're
+able to do some nifty ~pseudo~ macros without running into label naming conflicts.
 
-next is to really dig into the COMFY core stuff that sassy uses, which, _surprise_
-is based on an H. Baker paper: [[https://web.archive.org/web/20180208043127/http://home.pipeline.com/~hbaker1/sigplannotices/COMFY.TXT][a comfortable set of control primitives for asm programming]]
+next is to really dig into the COMFY core stuff that sassy uses, which, _surprise_ is based on an
+H. Baker paper: [[https://web.archive.org/web/20180208043127/http://home.pipeline.com/~hbaker1/sigplannotices/COMFY.TXT][a comfortable set of control primitives for asm programming]]
 
 #+begin_src miriam-scheme
   (pseudo (delay reg count)
@@ -212,19 +249,16 @@ is based on an H. Baker paper: [[https://web.archive.org/web/20180208043127/http
 
 * <2023-12-09 Sat> emacs mode
 
-there's a simple emacs major mode for "miriam scheme" now, which
-automatically sets up some of the indentation for macros and syntax
-highlighting for the assembler.
+there's a simple emacs major mode for "miriam scheme" now, which automatically sets up some of the
+indentation for macros and syntax highlighting for the assembler.
 
-I'll probably break it up into "miriam-scheme" and "miriam-asm" modes,
-since I'll want to not have the highlighting on ~pseudo~ and the like
-in the scheme code, but for now it's pretty nice.
+I'll probably break it up into "miriam-scheme" and "miriam-asm" modes, since I'll want to not have
+the highlighting on ~pseudo~ and the like in the scheme code, but for now it's pretty nice.
 
 -- blog post idea: how to do that?
 
-For now, everything is just nicely setup in the ~.dir-locals.el~ file;
-just opening a file in the project in emacs will prompt and then apply
-everything.
+For now, everything is just nicely setup in the ~.dir-locals.el~ file; just opening a file in the
+project in emacs will prompt and then apply everything.
 
 If it's ever a necessity to export it, it'll need more clean up.
 
@@ -233,7 +267,8 @@ If it's ever a necessity to export it, it'll need more clean up.
 I'm realizing, reading examples of getting various peripherals up, that I need a linker.
 
 - I need some kind of serializable output format (elf but s-expr)
-- I need some kind of "module" system in the assembler, so that I can collect modules and layout them out
+- I need some kind of "module" system in the assembler, so that I can collect modules and layout
+  them out
 - I want to be able to <import>, rather than <include>
 
 - a module has _assemble-time_ parts, and _run-time_ parts
@@ -242,16 +277,16 @@ I'm realizing, reading examples of getting various peripherals up, that I need a
 
 * <2023-12-09 Sat> data representation
 
-a _value_ is a (little-endian) 32-bit word
-a _value_ can be either an _immediate_ or an _object_
+- a _value_ is a (little-endian) 32-bit word
+- a _value_ can be either an _immediate_ or an _object_
 
-an _object_    is a pointer to an objects header word
-an _immediate_ is any 32-bit word that is non-zero in the low two bits
+- an _object_ is a pointer to an objects header word
+- an _immediate_ is any 32-bit word that is non-zero in the low two bits
 
 ergo, "unaligned pointers" represent immediates
 
 constraints:
--- we can only mask-test 8-bits at a time with arm instructions
+- we can only mask-test 8-bits at a time with arm instructions
 
 ** immediates
 
@@ -319,13 +354,14 @@ general outline of the runtime system, based on a bunch of reading that I've bee
 - heap allocation is simply pushing to the stack
 - limit the stack size to a page
     - when a requested allocation hits the page boundary, minor GC
-    - this will scan the _stack page_, copy out objects to some other pages, and then reset the stack pointer
+    - this will scan the _stack page_, copy out objects to some other pages, and then reset the
+      stack pointer
     - with CPS this is straightforwardish
 
 immutable first, like clojure
 - it makes reasoning about things easier
-- see [[https://web.archive.org/web/20200109080303/http://home.pipeline.com/~hbaker1/ObjectIdentity.html][this good paper on object identity]], which makes good cases for "everything is an immutable value,
-  including the reference to a mutable box".
+- see [[https://web.archive.org/web/20200109080303/http://home.pipeline.com/~hbaker1/ObjectIdentity.html][this good paper on object identity]], which makes good cases for "everything is an immutable
+  value, including the reference to a mutable box".
 
 *** reading list
 
@@ -337,8 +373,8 @@ immutable first, like clojure
   - [[https://www.multicians.org/lcp.html][maclisp -- the basic hackery]] (bibop collection, 100% different than chicken, referenced)
 - [[https://www.cs.princeton.edu/~appel/papers/142.pdf][a. appel: runtime tags aren't necessary]]
 
-these are brilliant papers on utilizing the stack for the nursery of a generational garbage collector
-the chicken paper in particular, since I'm much better at reading code examples
+these are brilliant papers on utilizing the stack for the nursery of a generational garbage
+collector the chicken paper in particular, since I'm much better at reading code examples
 
 h. baker's papers are really really good you guys.
 
@@ -346,35 +382,44 @@ h. baker's papers are really really good you guys.
 
 completely unrelated, it sucks that scheme doesn't have symbol macros.
 
-I think miriam should have a few CL and clojure features added; the language can drift some scheme, absolutely.
+I think miriam should have a few CL and clojure features added; the language can drift some scheme,
+absolutely.
 
 - keywords! basically symbols, but can't be used in a calling position
-  - especially if we end up doing symbol macros for things like generalized ~set!~, we need a simpler type than a symbol
+  - especially if we end up doing symbol macros for things like generalized ~set!~, we need a
+    simpler type than a symbol
     - a ~keyword~ is an interned string, which has pointer equality and is guaranteed to match
-    - a ~symbol~ is a record, comprised of a keyword and attribute slots for ~set!~, ~get!~, possibly a metatable, etc.
+    - a ~symbol~ is a record, comprised of a keyword and attribute slots for ~set!~, ~get!~,
+      possibly a metatable, etc.
 - drop the syntactic tower and just use unhygenic macros
 - use ~0x~ rather than ~#x~ for number syntaxes
   - that frees up the ~#~ for user-defined reader macros
 - reader macros, such that we can define arbitrary new ~#something()~ syntaxes
-  - ie. regex ~#/\d+/~, timestamps ~#t<1985-02-01T00:00:00.000000+06:00>~, xml ~#xml<foo><bar /></foo>~ etc.
-    - these should probably support unquote, ie. ~#xml<foo type=,attr>,(gen-content)</foo>~
-- some kind of generic method/multiple dispatch on user-provided predicates, rather than just ~case-lambda~
-  - this is basically clos, or the ~metatable~ stuff from lua, metaclasses in ruby, prototypes from javascript
+  - ie. regex ~#/\d+/~, timestamps ~#t<1985-02-01T00:00:00.000000+06:00>~,
+    xml ~#xml<foo><bar /></foo>~ etc.
+  - these should probably support unquote, ie. ~#xml<foo type=,attr>,(gen-content)</foo>~
+- some kind of generic method/multiple dispatch on user-provided predicates, rather than just
+  ~case-lambda~
+  - this is basically clos, or the ~metatable~ stuff from lua, metaclasses in ruby, prototypes from
+    javascript
   - generalized ~set!~, with symbol macros allowing for deeply nested sets
     - that lets us create arbitrary "setters" for meta-functions
-    - ie. ~(set! (set-handler 'accessor) set-accessor!)~, which might allow ~(set! (accessor x) value)~
+    - ie. ~(set! (set-handler 'accessor) set-accessor!)~, which might allow
+      ~(set! (accessor x) value)~
   - similarly, a generalized get! - ie. ~(get object key)~ - corresponds to lua ~index~ metamethod
   - does this extend to ~make~, ie generalized constructors?
   - generic ~read~, ~write~ and ~display~
     - anything interesting to read here re: haskell optics, etc?
     - can we specialize these at compile time?
   - _method combiner_ in clos is cool:
-    - you can specify on a generic function that, rather than only calling the most specific, you can use a
-      different operator; ie. ~(defgeneric foo (obj) (:method-combination list))~ would run _all_ applicable
-      methods and bundle values into a list; imagine ~fold~, ~begin~ etc. as combination operators
+    - you can specify on a generic function that, rather than only calling the most specific, you
+      can use a different operator; ie. ~(defgeneric foo (obj) (:method-combination list))~ would
+      run _all_ applicable methods and bundle values into a list; imagine ~fold~, ~begin~ etc. as
+      combination operators
   - a lot of this is reminiscent of the ruby class hierarchy as well
     - ~prepend~ ~append~ modules for overrides?
-- string interpolation (cheeky: ~"~ is a reader macro which compiles to a series of ~string:append~ calls)
+- string interpolation (cheeky: ~"~ is a reader macro which compiles to a series of ~string:append~
+  calls)
 
 you could think of the dotted record syntax like an expansion of the ~get!~ macro:
 
@@ -384,8 +429,9 @@ you could think of the dotted record syntax like an expansion of the ~get!~ macr
   (p.something 50) -> ((get! p something) 50)      -> (p-something 50)
 #+end_src
 
-part of the reason I keep reaching for relatively inefficient cons and alists is that ~(asm-context asm)~
-is almost as bad as (cadr asm) in terms of code-reading density; I'd much rather ~asm.context~.
+part of the reason I keep reaching for relatively inefficient cons and alists is that ~(asm-context
+asm)~ is almost as bad as (cadr asm) in terms of code-reading density; I'd much rather
+~asm.context~.
 
 see [[https://lispcookbook.github.io/cl-cookbook/cl21.html#features][cl21 (unofficial proposal for cleanup of commonlisp)]]
 
@@ -414,27 +460,28 @@ and it's much more complicated than what I'm doing:
 
 - elf:
   - when a relocation is needed, record the exact form of relocation
-  - when relocation is resolved, the instruction at the offset is extracted, and reencoded by the instruction
+  - when relocation is resolved, the instruction at the offset is extracted, and reencoded by the
+    instruction
 
   - relocation types (skipping thumb)
-    - ~R_ARM_PC24~,    (b #imm24), pcrelative, "bits 0-23 signed offset in units of 4-byte words"
-    - ~R_ARM_PC13~ ,   (ldr r #imm13) "bits 0-11 unsigned offset, bit 13 encodes direction (0 = -, 1 = +)"
-    - ~R_ARM_ABS12~,   LDR/STR imm
-    - ~R_ARM_SWI24~,   (swi #imm24)
+    - ~R_ARM_PC24~, (b #imm24), pcrelative, "bits 0-23 signed offset in units of 4-byte words"
+    - ~R_ARM_PC13~ , (ldr r #imm13) "bits 0-11 unsigned offset, bit 13 encodes sign (0 = -, 1 = +)"
+    - ~R_ARM_ABS12~, LDR/STR imm
+    - ~R_ARM_SWI24~, (swi #imm24)
     - explicitly sized, unencoded relocations
-      - ~R_ARM_ABS32~,   any 32-bit word, (probably data sections?)
-      - ~R_ARM_REL32~,   any 32-bit word
-      - ~R_ARM_ABS16~,   any 16-bit halfword (probably data sections?)
-      - ~R_ARM_ABS8~,    any 8-bit byte
+      - ~R_ARM_ABS32~, any 32-bit word, (probably data sections?)
+      - ~R_ARM_REL32~, any 32-bit word
+      - ~R_ARM_ABS16~, any 16-bit halfword (probably data sections?)
+      - ~R_ARM_ABS8~, any 8-bit byte
       - ~R_ARM_SBREL32~, any 32-bit word, relative to the section boundary
 
 pros of the elf way:
 - don't have to have the assembler present to relocate
 - relocations can work at program load time, rather than assembly time (dynamic loader)
 
-as such, I'm going to convert to this model; the instructions will encode relocations as tuples
-like ~(label fillptr (reloc-type args))~, and relocation time can use the reloc-type to do the
-actual in-place patching.
+as such, I'm going to convert to this model; the instructions will encode relocations as tuples like
+~(label fillptr (reloc-type args))~, and relocation time can use the reloc-type to do the actual
+in-place patching.
 
 ** elf
 
@@ -448,13 +495,15 @@ elf is pretty set on various posixy things, I don't need that, I can just marsha
     (reloc  . ((label offset (reloc-type arg)) ...)
 #+end_src
 
-then "execution" is, like on linux, the composing of the modules into a memory space and jumping into it
-c v
+then "execution" is, like on linux, the composing of the modules into a memory space and jumping
+into it
+
 * <2023-12-05 Tue>
 
 ~(define)~ and ~(pseudo)~ seem like they're working!
 
-Also, I read an interesting blog post positing an arm emulator as a unit testing framework; basically:
+Also, I read an interesting blog post positing an arm emulator as a unit testing framework;
+basically:
 
 #+begin_src
 (block some-function (:callconv)
@@ -474,14 +523,13 @@ Also, I read an interesting blog post positing an arm emulator as a unit testing
   (assert (memory-eq? #x4032 #\h)))
 #+end_src
 
-The `test` blocks are normally ignored by the assembler, but when running in "test" mode,
-insert breakpoint calls, and then assert the state of an emulated cpu + memory.
+The `test` blocks are normally ignored by the assembler, but when running in "test" mode, insert
+breakpoint calls, and then assert the state of an emulated cpu + memory.
 
-Interesting idea, and it would only require a somewhat minimal cpu emulation, because we don't
-need all the various devices, only the cpu and the ability to control the visible memory.
+Interesting idea, and it would only require a somewhat minimal cpu emulation, because we don't need
+all the various devices, only the cpu and the ability to control the visible memory.
 
-See:
-https://mos.datatra.sh/guide/unit-testing.html
+See: https://mos.datatra.sh/guide/unit-testing.html
 
 * <2023-12-04 Mon>
 well, this is cool!!
@@ -514,12 +562,11 @@ kinda!
 - ~push-reloc~
   - adds a relocation entry, which includes the _current stack of scopes_
 
-- ~fixup-reloc~
-  iterates through the saved stack of scopes, looking for a label that matches
-  both the scope and symbol name.
+- ~fixup-reloc~ iterates through the saved stack of scopes, looking for a label that matches both
+  the scope and symbol name.
 
-  since top-level labels are stored with the empty scope as a key, they're
-  naturally included in the search
+  since top-level labels are stored with the empty scope as a key, they're naturally included in the
+  search
 
 *** example
 
@@ -625,3 +672,7 @@ At the high level, there's the assembler syntax itself:
     (instr   (res "I just want this thiiiing to woooork!"))
     (outstr  (res (bytes 128))))
 #+end_src
+
+# Local Variables:
+# fill-column: 100
+# End:
