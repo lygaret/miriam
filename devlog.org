@@ -8,8 +8,25 @@
 - [[file:doc/r7rs.pdf][r7rs scheme]]
 
 * <2023-12-19 Tue>
-excellent documentation for the STklos virtual machine:
-[[https://stklos.net/Doc/HTML/vm.html]]
+- how are pattern matching and the specializer search done during generic function dispatch
+  different?  what would it look like if "generic functions" were conceptually about adding branches
+  to some ~match-case~ somewhere?
+  - [[https://web.archive.org/web/20090926053040/http://sadekdrobi.com/2009/05/27/multimethod-in-clojure-should-i-call-it-first-class-pattern-matching-or-pattern-matching-in-disguise/#comment-15412][comment from Rich Hickey on a blog post]] which explains some of his reasoning behind going with
+    multi-methods vs. pattern matching basically comes down to open/closed; pattern matching usually
+    expects all cases to be present (closed), comes with destructuring, and exhaustiveness checking
+  - "as I don't think than one makes the other redundant"
+
+- excellent documentation for [[https://stklos.net/Doc/HTML/vm.html][the STklos virtual machine]]
+
+- [[http://metamodular.com/SICL/call-site-optimization.pdf][call-site optimization in common lisp]] this is interesting; basically, instead of trying to
+  optimize at the caller, where there's lots of info about the callsite but nothing about the
+  function (which has to be looked up, and might be a generic function dispatch), do an
+  unconditional jump to a trampoline, which computes an efficient argument parsing / dispatch
+  function and caches it by callsite.
+
+  trouble happens when needing to invalidate the various caches; maybe there's something there with
+  the class-stamps written about in [[https://dl.acm.org/doi/pdf/10.1145/191081.191117][AGS '94]] (optimizing multi-method dispatch with compressed
+  tables)
 
 * <2023-12-18 Mon> metaobject protocol, the system
 - vm implements an event loop
