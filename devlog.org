@@ -7,6 +7,31 @@
 - [[file:doc/armv7-reference.pdf][armv7 architecture reference manual]]
 - [[file:doc/r7rs.pdf][r7rs scheme]]
 
+* <2023-12-21 Thu>
+- start with bytecode calculator:
+  - immediates
+  - constants
+  - jumps
+  - arithmetic
+
+* <2023-12-20 Wed>
+- data structures we'll need:
+  - growable vector (persistent, see clojure stuff)
+  - ring buffer
+  - trie (or something similar, for interning keywords)
+  - hashtable
+  - set (order doesnt matter, if efficiency is possible)
+  - utf8 strings
+    - possibly as btrees if fast random-access is required
+  - bignums, rationals
+    - really simple, doesn't need to be gmp level
+  - byte buffer (with alignment, and maybe packed struct access)
+  - some kind of mutex
+
+- won't need, but would be neat:
+  - computable reals; ie. pi = infinite repeated fraction that returns approximations within a given precision
+  - https://github.com/stylewarning/computable-reals
+
 * <2023-12-19 Tue>
 - how are pattern matching and the specializer search done during generic function dispatch
   different?  what would it look like if "generic functions" were conceptually about adding branches
@@ -15,8 +40,6 @@
     multi-methods vs. pattern matching basically comes down to open/closed; pattern matching usually
     expects all cases to be present (closed), comes with destructuring, and exhaustiveness checking
   - "as I don't think than one makes the other redundant"
-
-- excellent documentation for [[https://stklos.net/Doc/HTML/vm.html][the STklos virtual machine]]
 
 - [[http://metamodular.com/SICL/call-site-optimization.pdf][call-site optimization in common lisp]] this is interesting; basically, instead of trying to
   optimize at the caller, where there's lots of info about the callsite but nothing about the
@@ -28,6 +51,582 @@
   the class-stamps written about in [[https://dl.acm.org/doi/pdf/10.1145/191081.191117][AGS '94]] (optimizing multi-method dispatch with compressed
   tables)
 
+** stklos vm
+
+excellent documentation for [[https://stklos.net/Doc/HTML/vm.html][the STklos virtual machine]]
+
+https://github.com/egallesio/STklos/blob/master/src/vm.c
+
+- struct vm-thread
+  - pc    :: index or pointer into bytecode
+  - fp    :: frame pointer; stack of activation records; ie, control stack
+  - sp    :: stack pointer; ie, data stack
+  - stack :: the actual stack, one per thread
+  - val   :: register for the current value
+  - vals  :: register for multiple return values
+  - r1,r2 :: two extra registers
+  - env   :: the current environment
+  - current_module :: the current module
+  - iport, oport, eport :: the current input/output/error ports
+  - scheme_thread :: the scheme thread object associated with this vm thread
+- macros for run vm
+    #+begin_src c
+      #define PREP_CALL() do {
+        SCM fp_save = vm->fp;
+
+        vm->sp -= ACTIVATION_RECORD_SIZE
+        vm->fp  = vm->sp;
+
+        save_fp(vm->fp)   = fp_save;
+        save_proc(vm->fp) = false;
+        save_info(vm->fp) = false;
+      }
+
+      #define RET_CALL() do {
+        vm->sp    += ACTIVATION_RECORD_SIZE
+        vm->env    = save_env(vm->fp)
+        vm->pc     = save_pc(vm->fp)
+        vm->consts = save_consts(vm->fp)
+        vm->fp     = save_fp(vm->fp)
+      }
+
+      #define PUSH_ENV(nargs, func, next_env) do {
+        boxed_type(vm->sp)   = tc_frame
+        frame_length(vm->sp) = nargs
+        frame_next(vm->sp)   = next_env
+        frame_owner(vm->sp)  = func
+      }
+
+      #define CALL_CLOSURE(func) do {
+        vm->pc     = CLOSURE_BCODE(func)
+        vm->consts = CLOSURE_CONST(func)
+        vm->env    = vm->sp
+      }
+    #+end_src
+
+    #+begin_src c
+  /*
+   * VM LOCKING
+   * For optimization, some opcode/operand pairs get patched on the fly,
+   * and replaced by another operation.  It's important that the two
+   * reads (opcode and operand) happen atomically. If not, we can get this
+   * situation:
+   *   1) Thread A reads opcode at [n]
+   *   2) Thread B suspends thread A, changes opcode at [n] and operand
+   *      at [n+1]
+   *   3) Thread A resumes, reads new operand at [n+1], which does not
+   *      match the old opcode.
+   *
+   * To avoid this situation, and avoid a global lock around each
+   * operation, we can do this:
+   *    1) When we jump into one of the to-be-optimized opcodes, obtain
+   *       the global lock.
+   *    2) In case we hit the race condition (2, above), re-fetch and
+   *       dispatch the current operand. We will either:
+   *   3a) Re-dispatch to the same (to-be-optimized) opcode. Go ahead
+   *       and optimize, then release lock.
+   *   3b) We hit the race condition, and are dispatched to the new
+   *       operand. Release the global lock and process the operation.
+   *
+   * We need to patch the opcode last, otherwise:
+   *   1) Thread A obtains lock
+   *   2) Modifies opcode at [n]
+   *   3) Thread B interrupts thread A. Reads new opcode at [n], old
+   *      operand at [n+1]
+   *   4) Thread A resumes, updates operand at [n+1], releases lock
+   */
+    #+end_src
+- run vm
+
+  with apologies to the fact that there's ~#define~ switches to swap between computed gotos and a
+  switch, statement, I'm just going to transcribe as if it's the switch. details aren't super
+  important here.
+
+  #+begin_src prog
+    loop:
+      op = fetch_next
+
+      // debug
+      // statistics
+
+      switch op:
+        case nop: NEXT
+
+        // why a register and not onto the stack?
+        case im_false  : { vm->val = false; NEXT1 }
+        case im_true   : { vm->val = true; NEXT1 }
+        case im_nil    : { vm->val = nil; NEXT1 }
+        case im_minus1 : { vm->val = -1; NEXT1 }
+        case im_zero   : { vm->val = 0; NEXT1 }
+        case im_one    : { vm->val = +1; NEXT1 }
+        case im_void   : { vm->val = void; NEXT1 }
+
+        case small_int : { vm->val = make_int(fetch_next()); next1 }
+        case constant  : { vm->val = fetch_const(); next1 }
+
+        case false_push  { push(false); next }
+        case true_push   { push(true); next }
+        case nil_push    { push(nil); next }
+        case minus1_push { push(-1); next }
+        case zero_push   { push(0); next }
+        case one_push    { push(+1); next }
+        case void_push   { push(void); next }
+
+        case int_push      { push(make_int(fetch_next())); next }
+        case constant_push { push(fetch_constant()); next }
+
+        // interesting in that they patch the original callsite after lookup
+        case push_global_ref
+        case global_ref:
+             lock_and_restart // code lock for self-modifying code
+             orig_opcode  = vm->pc[-1]
+             orig-operand = fetch_const()
+
+             if (orig_opcode == PUSH_GLOBAL_REF)
+                push(vm->val)
+
+             vm->val = vm_lookup(orig_operand, vm->env, &ref, false)
+             if (!ref)
+                release_lock;
+                error: unbound variable
+
+             vm->pc[-1] = global_var_index(ref)
+             vm->pc[-2] = (orig_opcode == GLOBAL_REF) ? UGLOBAL_REF : PUSH_UGLOBAL_REF
+             release_lock
+             next1
+
+        case push_uglobal_ref:
+             push(vm->val)
+             fallthrough to uglobal_ref
+
+        case uglobal_ref:
+             release_possible_lock // because of optimization, we may get redispatched here
+             vm->val = fetch_global()
+             next1
+
+        case global_ref_push:
+             lock_and_restart
+             orig_operand = fetch_const()
+
+             res = lookup(orig_operand, vm->env, &ref, FALSE)
+             if (!ref)
+                release_lock
+                error: unbound variable
+
+             push(res)
+
+             // patch back code (we've already looked it up)
+             vm->pc[-1] = global_var_index(ref);
+             vm->pc[-2] = UGLOBAL_REF_PUSH;
+             release_lock;
+             next1
+
+        case uglobal_ref_push:
+             release_possible_lock // because of optimization, we may get redispatched here
+
+             push(fetch_global())
+             next1
+
+        case push_gref_invoke:
+        case gref_invoke:
+             lock_and_restart;
+
+             orig_opcode = vm->pc[-1]
+             orig_operand = fetch_const()
+
+             if (orig_opcode == PUSH_GREF_INVOKE)
+                push(vm->val)
+
+             vm->val = lookup(orig_operand, vm->env, &ref, FALSE)
+             if (!ref)
+                release lock
+                error: unbound variable
+
+             nargs = fetch_next()
+             vm->pc[-2] = global_var_index(ref);
+             vm->pc[-3] = ugref_invoke || push_ugref_invoke
+             release_lock
+
+             tailp = false
+             goto funcall
+
+        case push_ugref_invoke
+             push(vm->val)
+             fallthrough to ugref_invoke
+
+        case ugref_invoke:
+             release_possible_lock // because of optimization, we may get redispatched here
+
+             vm->val = fetch_global()
+             nargs   = fetch_next();
+
+             tailp = false
+             goto funcall
+
+        case push_gref_tail_inv
+        case gref_tail_invoke
+             lock_and_restart
+
+             orig_opcode = vm->pc[-1]
+             orig_operand = fetch_const()
+
+             if (orig_opcode == PUSH_REF_TAIL_INV)
+                push(vm->val);
+
+             vm->val = lookup(orig_operand, vm->env, &ref, FALSE);
+             if (!ref)
+                release_lock
+                error: unbound variable
+
+             nargs = fetch_next()
+             vm->pc[-2] = global_var_index(ref);
+             vm->pc[-3] = ugref_invoke || push_ugref_invoke
+             release_lock
+
+             tailp = true
+             goto funcall
+
+        case push_ugref_tail_inv
+             push(vm->val)
+             fallthrough to ugref_tail_invoke
+
+        case ugref_tail_invoke:
+             release_possible_lock // because of optimization, we may get redispatched here
+
+             vm->val = fetch_global()
+             nargs   = fetch_next();
+
+             tailp = true
+             goto funcall
+
+
+        case local_ref0 { vm->val = frame_local(vm->env, 0); next1 }
+        case local_ref1 { vm->val = frame_local(vm->env, 1); next1 }
+        case local_ref2 { vm->val = frame_local(vm->env, 2); next1 }
+        case local_ref3 { vm->val = frame_local(vm->env, 3); next1 }
+        case local_ref4 { vm->val = frame_local(vm->env, 4); next1 }
+        case local_refn { vm->val = frame_local(vm->env, fetch_next()); next1 }
+
+        // local sets that do the same thing, but
+
+        case deep_local_refn {
+
+            /* STklos organizes local environments as this: each level has a
+                maximum of 256 variables. Both the level and the address of local
+                variables are encoded in a single 16-bit integer, as "256v1+v2".
+                For example, 2*256 + 03 = 0x0203. The first byte, 0x02,
+                identifies the level, and the second byte, 0x03, identifies the
+                variable.  */
+
+           e = vm->env;
+           for level = first_byte(info); level; level--
+               e = frame_next(e);
+
+           vm->val = frame_local(e, second_byte(info))
+           next1;
+        }
+
+        case deep_loc_ref_far {
+            // arg is a cons, inefficient, but rare
+            info = fetch_cons()
+            typecheck_cons
+
+            e = vm->env;
+            for (level = int_val(car(info)); level; level--)
+                e = frame_next(e)
+
+            vm->val = frame_local(e, int_val(cdr(info)))
+            next1
+        }
+
+        case deep_loc_ref_push {
+           e = vm->env;
+           for level = first_byte(info); level; level--
+               e = frame_next(e);
+
+           push(vm->val = frame_local(e, second_byte(info)))
+           next1;
+        }
+
+        case(local_ref0_push) { push(frame_local(vm->env, 0));  next1;}
+        case(local_ref1_push) { push(frame_local(vm->env, 1));  next1;}
+        case(local_ref2_push) { push(frame_local(vm->env, 2));  next1;}
+        case(local_ref3_push) { push(frame_local(vm->env, 3));  next1;}
+        case(local_ref4_push) { push(frame_local(vm->env, 4));  next1;}
+
+        case global_set {
+             lock_and_restart
+             orig_operand = fetch_const()
+
+             lookup(orig_operand, vm->env, &ref, FALSE)
+             if (!ref)
+                release_lock
+                error: unbound variable
+
+             check_mutable
+             vm_global_set(ref, vm->val)
+
+             // patch for next time (avoiding lookups)
+             vm->pc[-1] = global_var_index(ref)
+             vm->pc[-2] = uglobal_set
+
+             if (closure?(vm->val) && closure_name(vm->val) == false) {
+                // handles (set! foo (lambda () ...))) so the lambda has the name <foo>
+                closure_name(vm->val) = orig_operand
+             }
+
+             release_lock
+             next
+         }
+
+         case uglobal_set {
+              release_possible_lock
+              fetch_global() = vm->val;
+              next0;
+         }
+
+         ///
+
+         case goto {
+              offset = fetch_next()
+              vm->pc += offset;
+              next
+         }
+
+         // case jump_true
+         // case jump_void
+         // case jump_null
+         case jump_false {
+              offset = fetch_next()
+              if (vm->val == false)
+                 vm->pc += offset
+              next
+         }
+
+         // case jump_numeq: _numeq2(pop(), vm->val)
+         // case jump_numlt: _numlt2(pop(), vm->val)
+         // case jump_numle: _numle2(pop(), vm->val)
+         // case jump_numgt: _numgt2(pop(), vm->val)
+         // case jump_numge: _numge2(pop(), vm->val)
+         case jump_numdiff {
+              offset = fetch_next()
+              if (!_numeq2(pop(), vm->val))
+                 vm->pc += offset;
+              next
+         }
+
+         // case jump_not_eqv: _eqv(pop(), vm->val) == false)
+         // case jump_not_equal: _equal(pop(), vm->val) == false)
+         case jump_not_eq {
+              offset = fetch_next()
+              if (pop() != vm->val)
+                 vm->pc += offset;
+              next;
+         }
+
+         ///
+
+         case define_symbol
+              var = fetch_const()
+
+              define_variable(var, vm->val, vm->env);
+              if (closure?(vm->val) && closure_name(vm->val) == false)
+                 closure_name(vm->val) = var;
+
+              vm->val     = void;
+              vm->vals[1] = var;
+              vm->valc    = 2
+              next;
+
+         case set_current_mod
+              vm->env = vm->val
+              select_module(vm->val);
+              next0;
+
+         case pop: vm->val = pop(); next1
+         case push: push(vm->val); next1
+
+         case create_closure
+              // pc[0] = offset, pc[1] = arity, pc[2+] = bytecode
+              vm->env  = clone_env(vm->env, vm)
+              vm->val  = make_closure(vm->pc+2, vm->pc[0]-1, vm->pc[1], vm->constants, vm->env)
+              vm->pc  += vm->pc[0] + 1
+              next1
+
+         case create_closure_far
+              // closure, but with a pc[0] that's a long constant
+              offset = look_const()
+              typecheck_offset
+
+              vm->env = clone_env(vm->env, vm)
+              vm->val = make_closure(vm->pc+2, intval(offset)-1, vm->pc[1], vm->constants, vm->env)
+              vm->pc  = intval(offset) + 1
+              next1
+
+         case prepare_call { prep_call(); next; }
+         case return       { ret_call(); next; }
+         case invoke
+              nargs = fetch_next()
+              tailp = false
+              goto funcall
+
+         case tail_invoke
+              nargs = fetch_next()
+              tailp = true
+              goto funcall
+
+         case push_prepare_call:
+              push(vm->val);
+              prep_call();
+              next;
+
+         case enter_let_star:
+              nargs = fetch_next();
+
+              // more or less prep_call, nargs * push, enter_let
+              prep_call();
+              vm->sp -= nargs + frame
+              push_env(nargs, vm->val, vm->env)
+              vm->env = vm->sp
+              next
+
+         case enter_let:
+              nargs = fetch_next
+
+              // push a new env onto the stack, no new activation record
+              vm->sp -= (sizeof(frame) - sizeof(scm)) / sizeof(scm)
+              push_env(nargs, vm->val, vm->env)
+              vm->env = vm->sp
+              next
+
+         case leave_let:
+              vm->sp = vm->fp + ACT_RECORD_SIZE
+              vm->env = frame_next(vm->env)
+              vm->fp  = ACT_SAVE_FP(vm->fp)
+              next;
+
+         case enter_tail_let_star:
+              nargs = fetch_next();
+
+              // more or less prep_call, nargs * push, enter_let
+              prep_call();
+              vm->sp -= nargs
+              goto enter_tail_let_inner
+
+         case enter_tail_let:
+              nargs = fetch_next
+            enter_tail_let_inner:
+
+              old_fp = save_fp(vm->fp)
+
+              if (is_in_stack?(vm->env)) {
+                 if (nargs) memmove((vm->env) - nargs, vm->sp, nargs * sizeof(SCM))
+                 vm->fp = old_fp
+
+                 // push a new env onto the stack
+                 vm->sp = vm->env - nargs - (sizeof env)
+              } else {
+                 if (nargs) memmove((vm->env) - nargs, vm->sp, nargs * sizeof(SCM))
+                 vm->fp = old_fp
+                 vm->sp = vm->fp - nargs - (sizeof env)
+              }
+
+              push_env(nargs, vm->val, vm->env)
+              vm->env = vm->sp
+              next
+
+        case formals
+        case docstring
+        case procname
+        case source
+             item = fetch_const
+             typecheck val is a closure
+             closure_plist(vm->val) = key_set(closure_plist(vm->val), key_type, item)
+             next
+
+        case call_location
+             save_info(vm->fp) = cons(pop(), makeint(fetch_next()))
+             next1
+
+        case inscheme:
+             vm->val = symb_in_scheme(vm->val)
+             next1
+
+        // inlined funcs
+
+        inadd2, insub2, inmul2, indiv2 // small ints
+        fxadd2, fxsub2, fxmul2, fxdiv2 // fixnum
+
+        vref, sref, aref
+
+        funcall:
+            switch type(vm->val)
+                   case tc_instance
+                        if (puregeneric? vm->val)
+                           argv = vm->sp + sargs - 1
+
+                           methods = compute_applicable_methods(vm->val, nargs, argv, false)
+                           if (!methods)
+                              vm->val = void && return;
+
+                           nm = make_next_method(vm->val, nargs, argv, methods);
+                           vm->val = inst_slot(car(methods), s_procedure)
+                           set_next_method(vm->val, nm);
+                        else // pure generic
+                           args = listify_top(nargs, vm)
+                           push(vm->val)
+                           push(args)
+                           vm->val = lookup(intern("apply-generic"), vm->current_module, &gf, false)
+                           nargs = 2
+                           goto funcall
+
+                        // fallthrough to closure
+                   case tc_closure:
+                        nargs = adjust_arity(vm->val, nargs, vm)
+                        if (tailp)
+                           // tail call, reuse the frame
+                           old_fp = act_save_fp(vm->fp)
+                           if (nargs)
+                              memmov(old_fp-nargs, vm->sp, nargs * sizeof(scm))
+                           vm->fp = old_fp
+                           vm->sp = push new env onto stack
+                           push_env(nargs, vm->val, closure_env(vm->val))
+                        else // tail
+                           vm->sp = push new env onte stack
+                           push_env(nargs, vm->val, closure_env(vm->val))
+
+                           act_save_env(vm->fp) = vm->env
+                           act_save_pc(vm->fp)  = vm->pc
+                           act_save_constants(vm->fp) = vm->constants
+
+                        act_save_proc(vm->fp) = vm->val
+                        call_closure(vm->val)
+                        goto end_funcall
+
+                   case tc_next_method:
+                        methods = NEXT_METHOD_METHODS(vm->val);
+                        // build up the funcall to the nextmethod, with the next-methods list popped
+                        goto funcall
+
+                   case tc_apply:
+                        // move the arguments down in the stack
+                        // then unfold the last argument into the stack
+                        // then funcall
+
+                   case tc_subr0: call_prim0(vm->val, ()); break;
+                   case tc_subr1: call_prim1(vm->val, (vm->sp[0])); break
+                   // tc_subr2
+                   // tc_subr3, 4, 5
+                   // tc_subr01 (effectively subr1, with a default null if 0 given)
+                   // tc_subr12, 23, 34
+
+                   // var args
+                   case tc_vsubr: call_primv(vm->val, (nargs, vm->sp + nargs - 1))
+
+                   // callable setters
+                   case tc_parameter:
+                        if nargs == 0: vm->val = get_paramater(vm->val)
+  #+end_src
 * <2023-12-18 Mon> metaobject protocol, the system
 - vm implements an event loop
   - run some bytecode & wait for events
@@ -155,7 +754,7 @@
     - write out module's bytestream
     - fixup any outstanding relocations
 
-*** chatgpt has this to say about multiple code/data sections
+** chatgpt has this to say about multiple code/data sections
 #+begin_quote
 Certainly! Having more than one data section in an ARM assembler module can be quite useful in
 several scenarios:
@@ -308,22 +907,13 @@ constraints:
 ** immediates
 
 #+begin_src
-(little endian, low byte is first)
-76543210 FEDCBA98 76543210 FEDCBA98
-
-type     data
-xxxx0001 xxxxxxxx xxxxxxxx xxxxxxxx <- fixnum (28bit signed int)
-xxxx0010 xxxxxxxx xxxxxxxx xxxxxxxx <- utf-8 codepoint (weird encoding, but single-byte encoding is simple still)
-xxxx0011 xxxxxxxx xxxxxxxx xxxxxxxx <-
-xxxx0101 xxxxxxxx xxxxxxxx xxxxxxxx <-
-xxxx0110 xxxxxxxx xxxxxxxx xxxxxxxx <-
-xxxx0111 xxxxxxxx xxxxxxxx xxxxxxxx <-
-xxxx1001 xxxxxxxx xxxxxxxx xxxxxxxx <-
-xxxx1010 xxxxxxxx xxxxxxxx xxxxxxxx <-
-xxxx1011 xxxxxxxx xxxxxxxx xxxxxxxx <-
-xxxx1101 xxxxxxxx xxxxxxxx xxxxxxxx <-
-xxxx1110 xxxxxxxx xxxxxxxx xxxxxxxx <- nil
-xxxx1111 xxxxxxxx xxxxxxxx xxxxxxxx <- undefined
+ type
+ xxxxxx00 <- pointer
+ 00000001 <- fixnum
+ 00000010 <- fixnum check bit
+ 11111101 <- true
+ 11111110 <- false
+ 11111111 <- void
 #+end_src
 
 ** objects
@@ -380,7 +970,7 @@ immutable first, like clojure
 - see [[https://web.archive.org/web/20200109080303/http://home.pipeline.com/~hbaker1/ObjectIdentity.html][this good paper on object identity]], which makes good cases for "everything is an immutable
   value, including the reference to a mutable box".
 
-*** reading list
+** reading list
 
 - [[https://web.archive.org/web/20191008050811/http://home.pipeline.com/~hbaker1/YoungGen.html][h. baker: 'infant mortality' and generational garbage collection]]
 - [[https://web.archive.org/web/20191008012410/http://home.pipeline.com/~hbaker1/LazyAlloc.html][h. baker: cons should not cons it's arguments; lazy alloc]]
