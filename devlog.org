@@ -13,6 +13,14 @@ got the vary bare bones of an interpreter loop written for GNU as in [[file:vm/m
 
 ** interesting observations/thoughts:
 
+*** endianness is more confusing than I give it credit for
+
+- little endian means that the _low byte_ of a word is at the _low address_
+- as such, a pointer of #x0F006543 will be stored in memory
+  - #x43 #x65 #x00 #x0F
+- _pointers_ must be 4-byte aligned, ie. bottom two bits zero, ie. a multiple of 4
+  - 0, 4, 8, c, 10, 14, 18, 1c, 20, etc.
+
 *** cache the top of the stack
 
 most of the instructions deal with the top word of the stack, possibly mutating and replacing
@@ -24,42 +32,25 @@ https://web.archive.org/web/20201018224735/https://medium.com/bumble-tech/when-p
   paired memory accesses
 
 ** bytecode format
+
 bytecode format has the opportunity to make a big difference in overhead, since shifting shit around
 in order to figure out the next instruction is kind of hard on ARM
-
-*** 1-byte opcode, data inline
-- lowest space overhead
-  - but _inline_ data is not aligned, so unaligned access
-- two instruction dispatch:
-  #+begin_src asm
-    ldb r:op, [r:pc], #1
-    ldr pc, [r:op, lsl #2]
-    .word pcrel_padding
-    .word opcode_0
-    .word opcode_1
-  #+end_src
-*** 1-byte inline, data outboard
-- no longer dealing with unaligned data access
-- managing two tables
-
-*** 2-byte opcode, data inline
 
 - if a bytecode is a 32bit word:
   - opcodes are native register sized
     - importantly: inline data is _also_ word aligned
-  - ~dddddddd dddddddd dddddddd tttttt00~
-  - low byte is opcode, includes 24bit payload
+    - in memory:
+      - ~tttttt00 dddddddd dddddddd dddddddd~
+    - big payload, if immediates have a byte-wide type, immediates can be encoded directly
+        - but it's really really wasteful of space if we're not efficiently using the payload
+  - for easy dispatch, opcodes should be multiples of 4
+    - means that the opcode can be an index without clearing the bottom bits
+      #+begin_src asm
+      ldr rop, [rpc], #4
+      ldr pc,  [pc, rop, lsl #24]
+      #+end_src
 
-  - three bytes of payload, which means we need to figure out how to make that payload useful
-  - dispatch loop is two instructions, so long as we reserve the bottom two bits of the
-  opcode to zeros (ie, all opcodes are multiples of 4, eg. opcode 2 = 0x08).
-  - doing this this way means that we can use the
-- a single byte opcode, where the opcodes know how much data to grab might work too
-- two instruction dispatch:
-  #+begin_src asm
-    ldb rop, [rpc], #1
-    ldr pc,  [pc, rop, lsl #2]
-  #+end_src
+- probably worth thinking about a 16bit opcode format, since there are half-word instructions in arm
 
 * <2023-12-24 Sun> bookmarks (tab dump)
 
