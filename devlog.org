@@ -7,12 +7,136 @@
 - [[file:doc/armv7-reference.pdf][armv7 architecture reference manual]]
 - [[file:doc/r7rs.pdf][r7rs scheme]]
 
+* <2023-12-24 Sun>
+in the interest of getting some ideas figured out in an actual bytecode interpreter, I've
+got the vary bare bones of an interpreter loop written for GNU as in [[file:vm/main.s][main.s]]
+
+** interesting observations/thoughts:
+
+*** cache the top of the stack
+
+most of the instructions deal with the top word of the stack, possibly mutating and replacing
+
+https://web.archive.org/web/20201018224735/https://medium.com/bumble-tech/when-pigs-fly-optimising-bytecode-interpreters-f64fb6bfa20f
+
+- that means pop/act/push is really common
+- SO, if we instead keep the top of the stack in a dedicated register, we get rid of a bunch of
+  paired memory accesses
+
+** bytecode format
+bytecode format has the opportunity to make a big difference in overhead, since shifting shit around
+in order to figure out the next instruction is kind of hard on ARM
+
+*** 1-byte opcode, data inline
+- lowest space overhead
+  - but _inline_ data is not aligned, so unaligned access
+- two instruction dispatch:
+  #+begin_src asm
+    ldb r:op, [r:pc], #1
+    ldr pc, [r:op, lsl #2]
+    .word pcrel_padding
+    .word opcode_0
+    .word opcode_1
+  #+end_src
+*** 1-byte inline, data outboard
+- no longer dealing with unaligned data access
+- managing two tables
+
+*** 2-byte opcode, data inline
+
+- if a bytecode is a 32bit word:
+  - opcodes are native register sized
+    - importantly: inline data is _also_ word aligned
+  - ~dddddddd dddddddd dddddddd tttttt00~
+  - low byte is opcode, includes 24bit payload
+
+  - three bytes of payload, which means we need to figure out how to make that payload useful
+  - dispatch loop is two instructions, so long as we reserve the bottom two bits of the
+  opcode to zeros (ie, all opcodes are multiples of 4, eg. opcode 2 = 0x08).
+  - doing this this way means that we can use the
+- a single byte opcode, where the opcodes know how much data to grab might work too
+- two instruction dispatch:
+  #+begin_src asm
+    ldb rop, [rpc], #1
+    ldr pc,  [pc, rop, lsl #2]
+  #+end_src
+
+* <2023-12-24 Sun> bookmarks (tab dump)
+
+a dump of bookmarks and recent tabs related to the project (I'm cleaning out dead bookmarks)
+
+- [[http://www.cs.tufts.edu/comp/250RTS/archive/rob-pike/impl-new-TR.pdf][implementation of newsqueak - rob pike (pdf)]]
+- [[https://github.com/nornagon/jonesforth/blob/master/jonesforth.S][jonesforth/jonesforth.S at master · nornagon/jonesforth]]
+- [[https://www.reddit.com/r/Forth/comments/74v6b3/bootstrapping_a_minimal_forth_from_scratch/][Bootstrapping a minimal Forth from scratch. : Forth]]
+- [[http://www.bradrodriguez.com/papers/moving1.htm][Moving Forth: Part 1]]
+- [[http://thinking-forth.sourceforge.net/][Thinking Forth]]
+- [[http://www.osdever.net/tutorials/view/memory-management-1][Memory Management 1 on Bona Fide OS Developer]]
+- [[https://github.com/AndreaOrru/zen/blob/master/kernel/vmem.zig][zen/multiboot.zig at master · AndreaOrru/zen]]
+- [[https://github.com/sqrt57/x86-scheme][sqrt57/x86-scheme: Implementation of Scheme programming language in assembly]]
+- [[https://github.com/ktakashi/sasm/blob/master/src/sasm/arch/x64.sls][sasm/src/sasm/arch/x64.sls at master · ktakashi/sasm]]
+- [[https://github.com/siraben/zkeme80/blob/master/src/assembler.scm][zkeme80/src/assembler.scm at master · siraben/zkeme80]]
+- [[http://www.willdonnelly.net/blog/2021-05-06-scheme-x86-assembler/][A Tiny x86 Assembler Written in Scheme]]
+- [[https://blog.edfine.io/blog/2016/06/28/erlang-data-representation/][Erlang's Internal Data Representation - Detail oriented]]
+- [[http://tumbleforth.hardcoded.net/][Tumble Forth]]
+- [[https://www.cs.purdue.edu/homes/rompf/papers/xhebraj-ecoop22.pdf][What If We Don't Pop the Stack? The Return of 2nd-Class Values - xhebraj-ecoop22.pdf]]
+- [[http://mumble.net/~jar/pubs/secureos/secureos.html][Emergent Technologies Inc. -- Security Kernel]]
+- [[https://dotat.at/@/2005-10-20-mergesort-for-linked-lists.html][mergesort for linked lists – Tony Finch]]
+- [[https://web.archive.org/web/20200223051632/http://home.pipeline.com/~hbaker1/CheneyMTA.html][Cheney on the M.T.A.]]
+- [[https://matt.might.net/articles/cps-conversion/][How to compile with continuations]]
+- [[https://web.archive.org/web/20200109080303/http://home.pipeline.com/~hbaker1/ObjectIdentity.html][ACM OOPS Messenger 4, 4 (Oct 1993), 2-27]]
+- [[http://www.iro.umontreal.ca/~feeley/papers/OLearyFeeleyMOREVMS23.pdf][A Compact and Extensible Portable Scheme VM - OLearyFeeleyMOREVMS23.pdf]]
+- [[https://sourceware.org/gdb/current/onlinedocs/gdb.html/Memory.html#Memory][Memory (Debugging with GDB)]]
+- [[https://azeria-labs.com/memory-instructions-load-and-store-part-4/][Memory Instructions: Load and Store (Part 4) | Azeria Labs]]
+- [[https://github.com/BaseMax/AwesomeInterpreter][BaseMax/AwesomeInterpreter: The Big list of the github, open-source interpreters.]]
+- [[https://github.com/arkanis/lisp.c/blob/master/bytecode_interpreter.c][lisp.c/bytecode_interpreter.c at master · arkanis/lisp.c]]
+- [[https://github.com/rm-hull/byok][rm-hull/byok: A bare-metal x86 Forth interpreter & compiler]]
+- [[http://metamodular.com/SICL/call-site-optimization.pdf][Call-site optimization for Common Lisp - call-site-optimization.pdf]]
+- [[https://github.com/egallesio/STklos/blob/master/src/vm.c][STklos/src/vm.c at master · egallesio/STklos]]
+- [[https://www.microsoft.com/en-us/research/publication/what-about-the-integer-numbers-fast-arithmetic-with-tagged-integers-a-plea-for-hardware-support/][What About the Integer Numbers? Fast Arithmetic with Tagged Integers - A Plea for Hardware Support - Microsoft Research]]
+- [[https://www.sparkfun.com/products/14643?src=raspberrypi][Raspberry Pi 3 B+ - DEV-14643 - SparkFun Electronics]]
+- [[https://www.gnu.org/software/guile/manual/html_node/Bitwise-Operations.html][Bitwise Operations (Guile Reference Manual)]]
+- [[https://github.com/s-matyukevich/raspberry-pi-os/tree/master/src/lesson01/src][raspberry-pi-os/src/lesson01/src at master · s-matyukevich/raspberry-pi-os]]
+- [[https://stackoverflow.com/questions/2770889/how-can-i-examine-the-stack-frame-with-gdb][How can I examine the stack frame with GDB? - Stack Overflow]]
+- [[https://kagi.com/search?q=fast+bytecode+number+representations][fast bytecode number representations - Kagi Search]]
+
 * <2023-12-21 Thu>
 - start with bytecode calculator:
   - immediates
   - constants
   - jumps
   - arithmetic
+
+** immediates
+
+#+begin_src
+xxxxxx00 <- pointer
+00000001 <- fixnum
+00000010 <- fixnum check bit
+
+11111011 <- void
+11111101 <- true
+11111110 <- false
+11111111 <- undefined
+#+end_src
+
+** bytecode
+
+32bit word
+6 bit opcode, (8 bit, but bottom two must be zeros)
+24 bit payload
+
+doing it this way makes the opcode a valid 4-byte aligned index
+which means dispatch is easy (~ldr pc, [pc, opcode, lsl #24]~)
+
+- #x00 ~op_halt~ :: halts
+
+- #x01 ~op_push_immediate~ ::
+  pushes a typed immediate; the bottom byte is the immediate tag
+  true, false, nil, void, etc.
+
+- #x02 ~op_push_fixnum~ ::
+  pushes the
+  pushes the 24bit payload, as an immediate fixnum
 
 * <2023-12-20 Wed>
 - data structures we'll need:
