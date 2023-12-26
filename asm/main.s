@@ -4,86 +4,174 @@
 
         rpc      .req r1
         rop      .req r2
-        rstop    .req r3
+        rsptop   .req r3
+        roptable .req r4
 
         rr1      .req r5
         rr2      .req r6
 
-_start:
-        movt sp, #0x00F0
-        adr rpc, prog
+        /* push the register onto the stack, caching the top */
+        .macro rpush reg
+        push {rsptop}
+        mov rsptop, \reg
+        .endm
 
-next:
-        /*
-        opcode must be a multiple of four, to allow
-        for 24bit payload, 64 unique opcodes
-        t t t t t t 0 0 d d d d d d d d d d d d d d d d
+        /* push two registers onto the stack, caching the top */
+        .macro rpush2 ra, rb
+        push {rsptop}
+        push {\ra}
+        mov rsptop, \rb
+        .endm
 
-        load the opcode into the op register from pc, and incr
-        then, load from the table below; offset is the opcode type
-        */
+        .macro rpop ra
+        mov \ra, {rsptop}
+        pop {rsptop}
+        .endm
+
+        /* jump to the next instruction in the program */
+        .macro rnext
         ldr rop, [rpc], #4
-        ldr pc, [pc, rop, lsr #24]
+        ldr pc, [roptable, rop, lsr #24]
+        .endm
 
-        .word 0 /* align pc */
+_start:
+        /* todo: should it be possible to add opcodes? */
+        adr roptable, optable
+
+        /* todo: memory management - stack, gc, etc. */
+        ldr sp, =#0x00F00004
+
+        /* todo: initial loader - what does raspi pass us? */
+        /* todo: initial runtime env - load modules, etc. */
+        adr rpc, prog
+        rnext
+
+error:
+        /* todo: runtime env allows log/debug/uart/pause, etc */
+        bkpt
+        b error
+
+optable:
+        /*
+        low byte of opcode is index into this table
+        index should be word-aligned
+        */
         .word op_halt
+        /* todo: system & runtime services */
+        /*
+        .word op_push_random
+        .word op_push_tick
+        */
+        /* todo: debug & statistics */
+        /*
+        .word op_tick_counter
+        .word op_push_counters
+        */
         .word op_push_immediate
+        /* todo: constant pool */
+        /*
+        .word op_push_constant
+        */
+        /* todo: conditions & equality */
+        /*
+        .word op_pred_eq
+        .word op_pred_eqv
+        .word op_pred_equal
+        .word op_pred_immediate
+        .word op_pred_pointer
+        .word op_pred_false
+        .word op_pred_void
+        */
+        /* todo: jumps
+        condition register & jump+cond?
+        or boolean on stack & jump+pop?
+        or many jumps+condition?
+        /*
+        .word op_jump
+        .word op_jump_when
+        .word op_jump_unless
+        */
         .word op_push_fixnum
         .word op_fixnum_add
         .word op_fixnum_sub
-        .word op_fixnum_incr
-        .word op_fixnum_decr
-
-error:
-        bkpt
-        b error
+        .word op_fixnum_immadd
+        .word op_fixnum_immsub
+        /*
+        .word op_fixnum_mul
+        .word op_fixnum_divrem
+        .word op_fixnum_immmul
+        .word op_fixnum_immdiv
+        .word op_fixnum_comp
+        .word op_fixnum_immcomp
+        */
+        /* todo: machine numbers (first?) explicitly sized ints with bitwise ops */
+        /* todo: fixnum promotion to bignum */
+        /* todo: hash function - hash _tables_ can be implemented in scheme pretty cheaply, but the _function_ needs suppert */
+        /*
+        .word op_hash_key
+        */
+        /* todo: vectors - (optionally) dynamically sized object arrays with O(1) indexed access */
+        /*
+        .word op_vector_alloc
+        .word op_vector_ref
+        .word op_vector_set
+        */
+        /* todo: buffers - (optionally) statically sized byte-buffers */
+        /*
+        .word op_buffer_alloc
+        .word op_buffer_ref
+        .word op_buffer_set
+        */
 
 op_halt:
         b error
 
 op_push_immediate:
-        push {rop}
-        b next
+        lsl rr1, rop, #8
+
+        rpush rop
+        rnext
 
 op_push_fixnum:
         lsl rr1, rop, #8
         lsr rr1, rr1, #6
         add  rr1, rr1, #1
-        push {rr1}
-        b next
+        rpush rr1
+        rnext
 
 op_fixnum_add:
-        pop {rr1, rr2}
-	add rr1, rr1, rr2
-        ubfx rr2, rr1, #0, #2
-        teq rr2, #2
+        pop {rr1}
+
+op_fixnum_add_:
+	add rsptop, rsptop, rr1
+        ubfx rr1, rsptop, #0, #2
+        teq rr1, #2
 	bne error
-	sub rr1, #1
-	push {rr1}
-        b next
+	sub rsptop, #1
+        rnext
+
+op_fixnum_immadd:
+        lsl rr1, rop, #8
+        lsr rr1, rr1, #6
+        add rr1, rr1, #1
+        b   op_fixnum_add_
 
 op_fixnum_sub:
-        pop {rr1, rr2}
-        eor rr1, rr1, #3
-	sub rr1, rr1, rr2
-        and rr1, rr1, #-3
-        ubfx rr2, rr1, #0, #3
-        teq rr2, #01
+        pop {rr1}
+
+op_fixnum_sub_:
+	sub rsptop, rsptop, rr1
+        ubfx rr1, rsptop, #0, #2
+        teq rr1, #2
 	bne error
-	push {rr1}
-        b next
+	sub rsptop, #1
+        rnext
 
-op_fixnum_incr:
-        pop {rr1}
-	add rr1, rr1, #4
-	push {rr1}
-        b next
-
-op_fixnum_decr:
-        pop {rr1}
-	sub rr1, rr1, #4
-	push {rr1}
-        b next
+op_fixnum_immsub:
+        lsl rr1, rop, #8
+        lsr rr1, rr1, #6
+        add rr1, rr1, #1
+        b   op_fixnum_sub_
 
 prog:
         /*
@@ -95,10 +183,28 @@ prog:
         14 op_fixnum_incr
         18 op_fixnum_decr
         */
-
-        .word 0x00000001
-
         .word 0x0800FFFF
         .word 0x18000000
         .word 0x18000000
         .word 0x00000000
+
+        /*
+        push 0
+        push 1
+        rotate
+        push 0
+
+        fib n
+        res = 1
+        a = 0
+        b = 1
+
+
+        while (n > 1) {
+        res = a + b
+        a = b
+        b = res
+        n--
+        }
+        return result
+        */

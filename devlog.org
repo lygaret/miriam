@@ -9,7 +9,7 @@
 
 * <2023-12-24 Sun>
 in the interest of getting some ideas figured out in an actual bytecode interpreter, I've
-got the vary bare bones of an interpreter loop written for GNU as in [[file:vm/main.s][main.s]]
+got the vary bare bones of an interpreter loop written for GNU as in [[file:asm/main.s][main.s]]
 
 ** interesting observations/thoughts:
 
