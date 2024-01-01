@@ -72,6 +72,14 @@ optable:
         /*
         .word op_push_constant
         */
+        /* todo: scopes */
+        /*
+        .word op_push_global
+        .word op_push_upref
+        .word op_push_localref
+        .word op_enter_scope
+        .word op_exit_scope
+        */
         /* todo: conditions & equality */
         /*
         .word op_pred_eq
@@ -91,26 +99,23 @@ optable:
         .word op_jump_when
         .word op_jump_unless
         */
+        /* todo: machine numbers (first?) explicitly sized ints with bitwise ops */
         .word op_push_fixnum
         .word op_fixnum_add
         .word op_fixnum_sub
-        .word op_fixnum_immadd
-        .word op_fixnum_immsub
         /*
         .word op_fixnum_mul
         .word op_fixnum_divrem
-        .word op_fixnum_immmul
-        .word op_fixnum_immdiv
         .word op_fixnum_comp
-        .word op_fixnum_immcomp
         */
-        /* todo: machine numbers (first?) explicitly sized ints with bitwise ops */
-        /* todo: fixnum promotion to bignum */
-        /* todo: hash function - hash _tables_ can be implemented in scheme pretty cheaply, but the _function_ needs suppert */
+        /* todo: immediate encoded instructions; no need to push/pop for +1, -4 etc. */
         /*
-        .word op_hash_key
+        .word op_fixnum_immadd
+        .word op_fixnum_immsub
         */
-        /* todo: vectors - (optionally) dynamically sized object arrays with O(1) indexed access */
+        /* todo: fixnum promotion to bignum */
+        /* todo: hash tables */
+        /* todo: vectors - dynamically sized object arrays with O(1) indexed access */
         /*
         .word op_vector_alloc
         .word op_vector_ref
@@ -122,6 +127,8 @@ optable:
         .word op_buffer_ref
         .word op_buffer_set
         */
+        /* todo: channels - synchronous rendezvous (optionally) buffered data exchange */
+        /* todo: processes - threads with message queues */
 
 op_halt:
         b error

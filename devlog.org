@@ -7,6 +7,63 @@
 - [[file:doc/armv7-reference.pdf][armv7 architecture reference manual]]
 - [[file:doc/r7rs.pdf][r7rs scheme]]
 
+* <2023-12-27 Wed>
+
+- two stacks; data and control
+  - data stack is used for processing, and is also the nursery gc
+  - control stack is frames
+    - calling a function means copying it's frame to the control stack
+    - arguments are on the stack, constants are in the frame
+
+- interesting papers re: prompt application for delimited control (manipulation of the control stack)
+  - [[https://okmij.org/ftp/continuations/index.html][most of oleg kiselyov's]] delemited continuations section
+    - this guy's website is _fascinating_
+  - [[https://www.cs.tufts.edu/~nr/cs257/archive/matthias-felleisen/prompts.pdf][theory and practice of first-class prompts]]
+    - paper from Matthias Felleisen which is exactly what it sounds like
+    - lots of other papers seem to reference this 𝓕 term
+    #+begin_quote
+    An 𝓕-application transforms the current control state into a functional abstr&ion, which we call continuation.
+    #+end_quote
+  - [[https://www-old.cs.utah.edu/plt/publications/pldi20-fd.pdf][compiler and runtime support for compiler marks]]
+    - paper from the racket guys re: adding marks (prompts? kinda?) to racket continuations
+  - [[https://www-old.cs.utah.edu/plt/publications/icfp07-fyff.pdf][Adding Delimited and Composable Control to a Production Programming Environment]]
+    - writeup of original PLT scheme adding ~control~ and ~shift~ while not screwing up ~call/cc~ and ~dynamic-wind~
+  - [[https://legacy.cs.indiana.edu/~dyb/pubs/monadicDC.pdf][a monadic framework for delimited continuations]]
+    - kent dybvig + simon payton jones
+    - the introduction is amazing, and they introduce the set of four operators I'm going to include in the VM
+    - ~newPrompt~ prompts are first class, and distinct
+    - ~pushPrompt~ takes a prompt, and delimits the contination of it's body at that prompt
+    - ~withSubCont~
+      #+begin_quote
+      It captures a portion of the current continuation back to but not including the activation of
+      pushPrompt with prompt p, aborts the current continuation back to and including the activation
+      of pushPrompt, and invokes f, passing it an abstract value representing the captured
+      subcontinuation.
+
+      If more than one activation of pushPrompt with prompt p is still active, the most recent
+      enclosing activation, i.e., the one that delimits the smallest subcontinuation, is selected.
+      #+end_quote
+    - ~pushSubCont~
+      #+begin_quote
+      evaluates its first operand to yield a subcontinuation k, then evaluates its second operand in a continuation that
+      composes k with the current continuation.
+      #+end_quote
+
+  - still need to understand more the finer details around -/+F-/+, in terms of where the abort is.
+    - I have a pretty good intuition re: ~call/cc~ but that's only one particular composition of operators
+      #+begin_src prog
+        withCont e = withSubCont p0 (λk.pushPrompt p0 (e k))
+        where:
+                p0 = the top level prompt around the whole program
+
+        callcc = λf.withCont (λk.pushSubCont k (f (reifyA k)))
+        where:
+                reifyA k = λv.abort (pushSubCont k v)
+                abort e  = withCont (λ .e)
+      #+end_src
+    - specifically, "abort" vs. "resume" isn't clear to me
+      - a lot is based on where prompts are placed (in the continuation chain) and where they're left after resumption
+
 * <2023-12-24 Sun>
 in the interest of getting some ideas figured out in an actual bytecode interpreter, I've
 got the vary bare bones of an interpreter loop written for GNU as in [[file:asm/main.s][main.s]]
@@ -131,6 +188,7 @@ which means dispatch is easy (~ldr pc, [pc, opcode, lsl #24]~)
 
 * <2023-12-20 Wed>
 - data structures we'll need:
+  - lock and mutex
   - growable vector (persistent, see clojure stuff)
   - ring buffer
   - trie (or something similar, for interning keywords)
@@ -141,7 +199,6 @@ which means dispatch is easy (~ldr pc, [pc, opcode, lsl #24]~)
   - bignums, rationals
     - really simple, doesn't need to be gmp level
   - byte buffer (with alignment, and maybe packed struct access)
-  - some kind of mutex
 
 - won't need, but would be neat:
   - computable reals; ie. pi = infinite repeated fraction that returns approximations within a given precision
