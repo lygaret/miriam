@@ -18,6 +18,7 @@
 - interesting papers re: prompt application for delimited control (manipulation of the control stack)
   - [[https://okmij.org/ftp/continuations/index.html][most of oleg kiselyov's]] delemited continuations section
     - this guy's website is _fascinating_
+    - also this [[http://pllab.is.ocha.ac.jp/~asai/cw2011tutorial/main-e.pdf][tutorial on shift/reset]], also by oleg kiselyov
   - [[https://www.cs.tufts.edu/~nr/cs257/archive/matthias-felleisen/prompts.pdf][theory and practice of first-class prompts]]
     - paper from Matthias Felleisen which is exactly what it sounds like
     - lots of other papers seem to reference this 𝓕 term
