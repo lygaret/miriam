@@ -1,5 +1,8 @@
         .section ".text"
+
         .global kmain
+        .global kexception
+
 kmain:
         bl uart_init
 
@@ -37,9 +40,29 @@ serial:
 echo:   mov x0, '\n'
         bl  uart_putb
         bl  uart_getb
+echo2:  sub x20, x0, #113
+        cbz x20, exit
         bl  uart_putb
         b   echo
+
+exit:   svc #4
+
+kexception:
+        mov x20, x0
+        adr x0, string
+        bl  uart_putz
+        add x0, x20, #48          // offset in ascii for digits
+        bl  uart_putb
+        mov x0, '\n'
+        bl  uart_putb
+        mov x0, '\r'
+        bl  uart_putb
+
+        wfe
+        b kexception
 
         .section ".data"
 string:
         .asciz "hello, world!\n\r"
+excstring:
+        .asciz "exception: "
