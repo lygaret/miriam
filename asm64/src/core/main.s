@@ -1,10 +1,10 @@
-        .section ".text"
+        .include "common.inc"
 
         .global kmain
         .global kexception
 
 kmain:
-        bl uart_init
+        bl init_miniuart
 
 hello:
         adr x0, string

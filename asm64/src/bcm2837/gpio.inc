@@ -1,0 +1,21 @@
+        MMIO_BASE = 0x3F000000
+
+        GPFBASE   = (MMIO_BASE + 0x00200000)
+        GPFSEL0   = 0x0000
+        GPFSEL1   = 0x0004
+        GPFSEL2   = 0x0008
+        GPFSEL3   = 0x000C
+        GPFSEL4   = 0x0010
+        GPFSEL5   = 0x0014
+        GPSET0    = 0x001C
+        GPSET1    = 0x0020
+        GPCLR0    = 0x0028
+        GPLEV0    = 0x0034
+        GPLEV1    = 0x0038
+        GPEDS0    = 0x0040
+        GPEDS1    = 0x0044
+        GPHEN0    = 0x0064
+        GPHEN1    = 0x0068
+        GPPUD     = 0x0094
+        GPPUDCLK0 = 0x0098
+        GPPUDCLK1 = 0x009C
