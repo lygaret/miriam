@@ -7,6 +7,56 @@
 - [[file:doc/armv7-reference.pdf][armv7 architecture reference manual]]
 - [[file:doc/r7rs.pdf][r7rs scheme]]
 
+* <2024-01-08 Mon>
+
+I've been messing around with a bunch of rpi low-level tutorials (see [[file:asm64/src/main.s][asm64/main.s]]) and have come to a few
+conclusions and immediate direction changes:
+
+1. I should move to a 64-bit architecture; much of what I liked about ARMv7 is gone in v8 and it's easier to
+   find sbcs with the v8 instruction set, and only more so in the future.
+
+2. I should target a very specific board
+
+3. If I'm going to be doing any real work with a board plugged in, I need to get a serial bootloader figured out
+   - [[https://gitlab.com/bztsrc/bootboot/-/tree/master/aarch64-rpi][bootboot (rpi3/4)]] can receive an initrd over serial, including the kernel
+   - a gdbstub can also load kernels, and might be part of the bootleader
+     - see [[https://github.com/jamieiles/rpi-gdb]]
+
+To that end, I've bought a couple of rpi zero 2 ws, which are pretty rad, and should soon have my uart-usb cable.
+
+- boot sequence
+  - videocore does it's thing and eventually brings up the arm core
+  - bootloader
+    - based on ~bootboot~
+    - sets the machine up in a consistent state, and loads the initrd/monitor
+  - monitor
+    - sets up monitor/debugger on uart0
+    - runs under hypervisor mode, which gives it extra access
+      - has it's own set of exception vectors
+    - debugger
+      - a breakpoint is
+        - (address of code, original instruction)
+        - and then replace the original instruction with ~hyp #dbg-break~ instruction
+      - single stepping:
+        - using the actual debugger extensions, you can feed instructions to the processor
+          - but you could also do it by
+      - arm debugging extensions has registers for breakpoints and watchpoints,
+        - but I'm not sure how it plays with modes
+    - loader
+      - can load/run elf files
+      - can act kinda like ftp for the initrd
+        - being able to send files to the initrd over uart means being able to debug dynamic code
+        - especially once we're using the virtual machine for things, need to be able to send over new bytecode
+        - implies that it understands the filesystem
+    - monitor looks for sys/core.elf in initrd and runs it
+      - hypervisor exceptions get back to the monitor
+
+  - kernel8.img is loaded and booted by the firmware
+    - kernel8.img is based on ~bootboot~, which preconfigures the host into a known state and loads an initrd
+    - initrd comes from host from SD card or over serial
+    - initrd is a tarfile, containing some kernel.elf
+    - bootboot finds the kernel, loads it per elf, and jumps into it
+
 * <2023-12-27 Wed>
 
 - two stacks; data and control
